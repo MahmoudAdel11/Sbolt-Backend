@@ -1,0 +1,31 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-yalla_go}:${POSTGRES_PASSWORD:-yalla_go}@db:5432/${POSTGRES_DB:-yalla_go}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-yalla_go}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yalla_go}
+      POSTGRES_DB: ${POSTGRES_DB:-yalla_go}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yalla_go} -d ${POSTGRES_DB:-yalla_go}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
