@@ -28,6 +28,11 @@ class RideResponse(BaseModel):
     cancelled_at: datetime | None
 
 
+class AvailableRidesQuery(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+
+
 class RideHistoryQuery(BaseModel):
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0)

@@ -66,6 +66,66 @@ async def test_register_password_below_minimum_length_returns_422(client: AsyncC
     assert response.status_code == 422
 
 
+async def test_register_without_role_defaults_to_rider(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "no-role@example.com",
+            "password": "supersecret123",
+            "full_name": "No Role",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["role"] == "rider"
+
+
+async def test_register_with_explicit_rider_role(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "explicit-rider@example.com",
+            "password": "supersecret123",
+            "full_name": "Explicit Rider",
+            "role": "rider",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["role"] == "rider"
+
+
+async def test_register_with_driver_role(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "new-driver@example.com",
+            "password": "supersecret123",
+            "full_name": "New Driver",
+            "role": "driver",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["role"] == "driver"
+    assert body["is_online"] is False  # drivers start offline
+
+
+async def test_register_with_invalid_role_returns_422(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "bad-role@example.com",
+            "password": "supersecret123",
+            "full_name": "Bad Role",
+            "role": "admin",
+        },
+    )
+
+    assert response.status_code == 422
+
+
 # --- Login -------------------------------------------------------------------
 
 

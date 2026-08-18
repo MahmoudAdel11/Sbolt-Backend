@@ -16,6 +16,9 @@ class User:
     full_name: str
     is_active: bool
     role: UserRole = UserRole.RIDER
+    # Only meaningful for drivers; riders simply never toggle it. Defaults False so a
+    # newly-registered driver isn't surfaced in availability results until they opt in.
+    is_online: bool = False
     # Server-generated on persistence; unset (None) before the repository assigns them.
     id: UUID | None = None
     created_at: datetime | None = None

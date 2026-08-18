@@ -23,6 +23,7 @@ async def register(
         password=body.password,
         full_name=body.full_name,
         phone_number=body.phone_number,
+        role=body.role,
     )
     return UserResponse(
         id=user.id,
@@ -30,6 +31,8 @@ async def register(
         full_name=user.full_name,
         phone_number=user.phone_number,
         is_active=user.is_active,
+        role=user.role,
+        is_online=user.is_online,
         created_at=user.created_at,
     )
 
@@ -51,6 +54,8 @@ async def me(current_user: CurrentUserDep) -> UserResponse:
         full_name=current_user.full_name,
         phone_number=current_user.phone_number,
         is_active=current_user.is_active,
+        role=current_user.role,
+        is_online=current_user.is_online,
         created_at=current_user.created_at,
     )
 
