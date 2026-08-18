@@ -4,7 +4,12 @@ from uuid import UUID
 from app.application.ride.repository import RideRepository
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.domain.ride.entities import Ride, RideStatus
+from app.domain.ride.geo import DEFAULT_AVAILABLE_RIDES_RADIUS_KM, bounding_box
 from app.domain.user.entities import User, UserRole
+
+# Safety-net cap, not client-configurable - the bounding box already limits result
+# size in practice, but this protects against a pathologically dense area.
+_AVAILABLE_RIDES_LIMIT = 20
 
 
 class RequestRideUseCase:
@@ -108,6 +113,33 @@ class GetRideHistoryUseCase:
 
         has_more = len(rides) > limit
         return rides[:limit], has_more
+
+
+class GetAvailableRidesUseCase:
+    """Unassigned ride requests near a driver, for the polling-based discovery feed.
+    "Nearby" is a plain bounding box (see app.domain.ride.geo) - an intentional
+    simplification, not PostGIS, so results are cheap but not a precise radius."""
+
+    def __init__(self, ride_repository: RideRepository):
+        self._ride_repository = ride_repository
+
+    async def execute(self, driver: User, latitude: float, longitude: float) -> list[Ride]:
+        # Consistent with require_driver's role gating: a clear 403, not a silently
+        # empty list, so an offline driver's client can distinguish "you're offline"
+        # from "no rides nearby right now" and react accordingly (e.g. prompt to go online).
+        if not driver.is_online:
+            raise ForbiddenError("You must be online to view available rides.")
+
+        lat_min, lat_max, lng_min, lng_max = bounding_box(
+            latitude, longitude, DEFAULT_AVAILABLE_RIDES_RADIUS_KM
+        )
+        return await self._ride_repository.list_available(
+            pickup_lat_min=lat_min,
+            pickup_lat_max=lat_max,
+            pickup_lng_min=lng_min,
+            pickup_lng_max=lng_max,
+            limit=_AVAILABLE_RIDES_LIMIT,
+        )
 
 
 class GetRideDetailUseCase:

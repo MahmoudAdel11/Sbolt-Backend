@@ -119,3 +119,24 @@ class SqlAlchemyRideRepository(RideRepository):
             .offset(offset)
         )
         return [_to_entity(model) for model in result.scalars().all()]
+
+    async def list_available(
+        self,
+        pickup_lat_min: float,
+        pickup_lat_max: float,
+        pickup_lng_min: float,
+        pickup_lng_max: float,
+        limit: int,
+    ) -> list[Ride]:
+        result = await self._session.execute(
+            select(RideModel)
+            .where(
+                RideModel.status == RideStatus.REQUESTED,
+                RideModel.driver_id.is_(None),
+                RideModel.pickup_latitude.between(pickup_lat_min, pickup_lat_max),
+                RideModel.pickup_longitude.between(pickup_lng_min, pickup_lng_max),
+            )
+            .order_by(desc(RideModel.requested_at))
+            .limit(limit)
+        )
+        return [_to_entity(model) for model in result.scalars().all()]

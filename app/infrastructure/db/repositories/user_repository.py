@@ -18,6 +18,7 @@ def _to_entity(model: UserModel) -> User:
         full_name=model.full_name,
         is_active=model.is_active,
         role=model.role,
+        is_online=model.is_online,
         created_at=model.created_at,
         updated_at=model.updated_at,
         phone_number=model.phone_number,
@@ -45,6 +46,7 @@ class SqlAlchemyUserRepository(UserRepository):
             phone_number=user.phone_number,
             is_active=user.is_active,
             role=user.role,
+            is_online=user.is_online,
         )
         self._session.add(model)
         await self._session.flush()
@@ -70,3 +72,13 @@ class SqlAlchemyUserRepository(UserRepository):
     async def exists_by_email(self, email: str) -> bool:
         result = await self._session.execute(select(UserModel.id).where(UserModel.email == email))
         return result.scalar_one_or_none() is not None
+
+    async def set_online_status(self, user_id: UUID, is_online: bool) -> User:
+        model = await self._session.get(UserModel, user_id)
+        if model is None:
+            raise NotFoundError("User not found.")
+
+        model.is_online = is_online
+        await self._session.flush()
+        await self._session.refresh(model)
+        return _to_entity(model)

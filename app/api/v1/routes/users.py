@@ -23,5 +23,7 @@ async def update_me(
         full_name=user.full_name,
         phone_number=user.phone_number,
         is_active=user.is_active,
+        role=user.role,
+        is_online=user.is_online,
         created_at=user.created_at,
     )

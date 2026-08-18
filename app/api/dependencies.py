@@ -17,6 +17,7 @@ from app.application.ride.use_cases import (
     AcceptRideUseCase,
     CancelRideUseCase,
     CompleteRideUseCase,
+    GetAvailableRidesUseCase,
     GetRideDetailUseCase,
     GetRideHistoryUseCase,
     RequestRideUseCase,
@@ -25,6 +26,7 @@ from app.application.user.repository import UserRepository
 from app.application.user.use_cases import (
     LoginUserUseCase,
     RegisterUserUseCase,
+    SetDriverStatusUseCase,
     UpdateProfileUseCase,
 )
 from app.core.exceptions import ForbiddenError, UnauthorizedError
@@ -103,6 +105,15 @@ def get_update_profile_use_case(user_repository: UserRepositoryDep) -> UpdatePro
 UpdateProfileUseCaseDep = Annotated[UpdateProfileUseCase, Depends(get_update_profile_use_case)]
 
 
+def get_set_driver_status_use_case(user_repository: UserRepositoryDep) -> SetDriverStatusUseCase:
+    return SetDriverStatusUseCase(user_repository)
+
+
+SetDriverStatusUseCaseDep = Annotated[
+    SetDriverStatusUseCase, Depends(get_set_driver_status_use_case)
+]
+
+
 def get_ride_repository(session: DbSession) -> RideRepository:
     return SqlAlchemyRideRepository(session)
 
@@ -150,6 +161,15 @@ def get_ride_detail_use_case(ride_repository: RideRepositoryDep) -> GetRideDetai
 
 
 GetRideDetailUseCaseDep = Annotated[GetRideDetailUseCase, Depends(get_ride_detail_use_case)]
+
+
+def get_available_rides_use_case(ride_repository: RideRepositoryDep) -> GetAvailableRidesUseCase:
+    return GetAvailableRidesUseCase(ride_repository)
+
+
+GetAvailableRidesUseCaseDep = Annotated[
+    GetAvailableRidesUseCase, Depends(get_available_rides_use_case)
+]
 
 
 def get_favorite_place_repository(session: DbSession) -> FavoritePlaceRepository:

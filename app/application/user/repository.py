@@ -21,3 +21,9 @@ class UserRepository(ABC):
 
     @abstractmethod
     async def exists_by_email(self, email: str) -> bool: ...
+
+    @abstractmethod
+    async def set_online_status(self, user_id: UUID, is_online: bool) -> User:
+        """Sets is_online directly, independent of the profile-fields update() method -
+        driver availability is a distinct concern from profile editing."""
+        ...
