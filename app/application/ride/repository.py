@@ -37,3 +37,17 @@ class RideRepository(ABC):
 
     @abstractmethod
     async def list_by_driver(self, driver_id: UUID, limit: int, offset: int) -> list[Ride]: ...
+
+    @abstractmethod
+    async def list_available(
+        self,
+        pickup_lat_min: float,
+        pickup_lat_max: float,
+        pickup_lng_min: float,
+        pickup_lng_max: float,
+        limit: int,
+    ) -> list[Ride]:
+        """Unassigned (driver_id IS NULL), REQUESTED rides whose pickup point falls
+        within the given bounding box - see app.domain.ride.geo for how the box is
+        derived. Most-recent-first, capped at limit."""
+        ...

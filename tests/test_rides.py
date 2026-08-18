@@ -4,9 +4,11 @@ from uuid import uuid4
 from httpx import AsyncClient
 
 from app.application.ride.use_cases import AcceptRideUseCase, CompleteRideUseCase
+from app.application.user.use_cases import SetDriverStatusUseCase
 from app.domain.user.entities import UserRole
 from app.infrastructure.db.models.ride import RideModel
 from app.infrastructure.db.repositories.ride_repository import SqlAlchemyRideRepository
+from app.infrastructure.db.repositories.user_repository import SqlAlchemyUserRepository
 from tests.conftest import auth_headers
 from tests.factories import create_ride, create_user
 
@@ -30,6 +32,13 @@ async def _complete(db_session, ride_id, driver_id):
     """Drive an ACCEPTED ride to COMPLETED via the app's own CompleteRideUseCase, bypassing HTTP."""
     use_case = CompleteRideUseCase(SqlAlchemyRideRepository(db_session))
     return await use_case.execute(ride_id=ride_id, driver_id=driver_id)
+
+
+async def _go_online(db_session, driver_id) -> None:
+    """Sets is_online=True directly via the app's own SetDriverStatusUseCase, bypassing HTTP -
+    setup for tests that aren't specifically about the status-toggle endpoint itself."""
+    use_case = SetDriverStatusUseCase(SqlAlchemyUserRepository(db_session))
+    await use_case.execute(user_id=driver_id, is_online=True)
 
 
 async def _set_requested_at(db_session, ride_id, requested_at):
@@ -397,3 +406,130 @@ async def test_viewing_nonexistent_ride_returns_404(
     )
 
     assert response.status_code == 404
+
+
+# --- GET /rides/available -------------------------------------------------------
+
+
+async def test_online_driver_sees_nearby_unassigned_ride(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, role=UserRole.DRIVER)
+    await _go_online(db_session, driver.user.id)
+    ride = await create_ride(
+        db_session, rider_id=rider.user.id, pickup_latitude=30.05, pickup_longitude=31.23
+    )
+
+    response = await client.get(
+        "/api/v1/rides/available?lat=30.05&lng=31.23",
+        headers=auth_headers(driver.access_token),
+    )
+
+    assert response.status_code == 200
+    ids = [item["id"] for item in response.json()]
+    assert ids == [str(ride.id)]
+
+
+async def test_available_rides_excludes_rides_outside_bounding_box(
+    client: AsyncClient, db_session
+) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, role=UserRole.DRIVER)
+    await _go_online(db_session, driver.user.id)
+    # Far away - Alexandria vs. the driver searching from Cairo, well outside the
+    # ~5km default box.
+    await create_ride(
+        db_session, rider_id=rider.user.id, pickup_latitude=31.2001, pickup_longitude=29.9187
+    )
+
+    response = await client.get(
+        "/api/v1/rides/available?lat=30.05&lng=31.23",
+        headers=auth_headers(driver.access_token),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_available_rides_excludes_already_assigned_rides(
+    client: AsyncClient, db_session
+) -> None:
+    rider = await create_user(db_session)
+    assigned_driver = await create_user(
+        db_session, role=UserRole.DRIVER, email="assigned-driver@example.com"
+    )
+    searching_driver = await create_user(
+        db_session, role=UserRole.DRIVER, email="searching-driver@example.com"
+    )
+    await _go_online(db_session, searching_driver.user.id)
+    ride = await create_ride(
+        db_session, rider_id=rider.user.id, pickup_latitude=30.05, pickup_longitude=31.23
+    )
+    await _accept(db_session, ride.id, assigned_driver.user.id)
+
+    response = await client.get(
+        "/api/v1/rides/available?lat=30.05&lng=31.23",
+        headers=auth_headers(searching_driver.access_token),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_rider_cannot_access_available_rides(client: AsyncClient, registered_user) -> None:
+    response = await client.get(
+        "/api/v1/rides/available?lat=30.05&lng=31.23",
+        headers=auth_headers(registered_user.access_token),
+    )
+
+    assert response.status_code == 403
+
+
+async def test_offline_driver_gets_403_on_available_rides(
+    client: AsyncClient, db_session
+) -> None:
+    driver = await create_user(db_session, role=UserRole.DRIVER)  # stays offline (default)
+
+    response = await client.get(
+        "/api/v1/rides/available?lat=30.05&lng=31.23",
+        headers=auth_headers(driver.access_token),
+    )
+
+    assert response.status_code == 403
+
+
+async def test_available_rides_respects_limit_cap(client: AsyncClient, db_session) -> None:
+    driver = await create_user(
+        db_session, role=UserRole.DRIVER, email="dense-area-driver@example.com"
+    )
+    await _go_online(db_session, driver.user.id)
+
+    # A rider can only have one active ride at a time, so 22 simultaneously REQUESTED
+    # rides need 22 distinct riders - the cap is about result-set size, not about any
+    # one rider's state.
+    for i in range(22):
+        rider = await create_user(db_session, email=f"dense-area-rider-{i}@example.com")
+        await create_ride(
+            db_session, rider_id=rider.user.id, pickup_latitude=30.05, pickup_longitude=31.23
+        )
+
+    response = await client.get(
+        "/api/v1/rides/available?lat=30.05&lng=31.23",
+        headers=auth_headers(driver.access_token),
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()) == 20  # capped, not all 22
+
+
+async def test_available_rides_invalid_coordinates_returns_422(
+    client: AsyncClient, db_session
+) -> None:
+    driver = await create_user(db_session, role=UserRole.DRIVER)
+    await _go_online(db_session, driver.user.id)
+
+    response = await client.get(
+        "/api/v1/rides/available?lat=999&lng=31.23",
+        headers=auth_headers(driver.access_token),
+    )
+
+    assert response.status_code == 422

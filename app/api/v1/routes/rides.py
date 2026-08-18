@@ -9,11 +9,13 @@ from app.api.dependencies import (
     CompleteRideUseCaseDep,
     CurrentUserDep,
     DriverUserDep,
+    GetAvailableRidesUseCaseDep,
     GetRideDetailUseCaseDep,
     GetRideHistoryUseCaseDep,
     RequestRideUseCaseDep,
 )
 from app.api.v1.schemas.ride import (
+    AvailableRidesQuery,
     RideHistoryQuery,
     RideHistoryResponse,
     RideRequestSchema,
@@ -67,6 +69,16 @@ async def get_ride_history(
         user=current_user, limit=query.limit, offset=query.offset
     )
     return RideHistoryResponse(items=[_to_response(ride) for ride in rides], has_more=has_more)
+
+
+@router.get("/available", response_model=list[RideResponse])
+async def get_available_rides(
+    current_user: DriverUserDep,
+    use_case: GetAvailableRidesUseCaseDep,
+    query: Annotated[AvailableRidesQuery, Depends()],
+) -> list[RideResponse]:
+    rides = await use_case.execute(driver=current_user, latitude=query.lat, longitude=query.lng)
+    return [_to_response(ride) for ride in rides]
 
 
 @router.get("/{ride_id}", response_model=RideResponse)
