@@ -25,6 +25,7 @@ async def test_register_success(client: AsyncClient) -> None:
     assert body["full_name"] == "Jane Doe"
     assert body["phone_number"] == "+201234567890"
     assert body["is_active"] is True
+    assert body["driver_profile"] is None
     assert "id" in body
     assert "created_at" in body
     assert "hashed_password" not in body
@@ -66,60 +67,60 @@ async def test_register_password_below_minimum_length_returns_422(client: AsyncC
     assert response.status_code == 422
 
 
-async def test_register_without_role_defaults_to_rider(client: AsyncClient) -> None:
+async def test_register_without_driver_flag_has_no_driver_profile(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "email": "no-role@example.com",
+            "email": "no-driver-flag@example.com",
             "password": "supersecret123",
-            "full_name": "No Role",
+            "full_name": "No Driver Flag",
         },
     )
 
     assert response.status_code == 201
-    assert response.json()["role"] == "rider"
+    assert response.json()["driver_profile"] is None
 
 
-async def test_register_with_explicit_rider_role(client: AsyncClient) -> None:
+async def test_register_with_explicit_false_has_no_driver_profile(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/auth/register",
         json={
             "email": "explicit-rider@example.com",
             "password": "supersecret123",
             "full_name": "Explicit Rider",
-            "role": "rider",
+            "register_as_driver": False,
         },
     )
 
     assert response.status_code == 201
-    assert response.json()["role"] == "rider"
+    assert response.json()["driver_profile"] is None
 
 
-async def test_register_with_driver_role(client: AsyncClient) -> None:
+async def test_register_as_driver_creates_driver_profile(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/auth/register",
         json={
             "email": "new-driver@example.com",
             "password": "supersecret123",
             "full_name": "New Driver",
-            "role": "driver",
+            "register_as_driver": True,
         },
     )
 
     assert response.status_code == 201
     body = response.json()
-    assert body["role"] == "driver"
-    assert body["is_online"] is False  # drivers start offline
+    assert body["driver_profile"] is not None
+    assert body["driver_profile"]["is_online"] is False  # drivers start offline
 
 
-async def test_register_with_invalid_role_returns_422(client: AsyncClient) -> None:
+async def test_register_with_invalid_driver_flag_returns_422(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "email": "bad-role@example.com",
+            "email": "bad-flag@example.com",
             "password": "supersecret123",
-            "full_name": "Bad Role",
-            "role": "admin",
+            "full_name": "Bad Flag",
+            "register_as_driver": "not-a-boolean-and-not-coercible",
         },
     )
 

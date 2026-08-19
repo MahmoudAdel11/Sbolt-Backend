@@ -5,10 +5,11 @@ from httpx import AsyncClient
 
 from app.application.ride.use_cases import AcceptRideUseCase, CompleteRideUseCase
 from app.application.user.use_cases import SetDriverStatusUseCase
-from app.domain.user.entities import UserRole
 from app.infrastructure.db.models.ride import RideModel
+from app.infrastructure.db.repositories.driver_profile_repository import (
+    SqlAlchemyDriverProfileRepository,
+)
 from app.infrastructure.db.repositories.ride_repository import SqlAlchemyRideRepository
-from app.infrastructure.db.repositories.user_repository import SqlAlchemyUserRepository
 from tests.conftest import auth_headers
 from tests.factories import create_ride, create_user
 
@@ -37,7 +38,7 @@ async def _complete(db_session, ride_id, driver_id):
 async def _go_online(db_session, driver_id) -> None:
     """Sets is_online=True directly via the app's own SetDriverStatusUseCase, bypassing HTTP -
     setup for tests that aren't specifically about the status-toggle endpoint itself."""
-    use_case = SetDriverStatusUseCase(SqlAlchemyUserRepository(db_session))
+    use_case = SetDriverStatusUseCase(SqlAlchemyDriverProfileRepository(db_session))
     await use_case.execute(user_id=driver_id, is_online=True)
 
 
@@ -110,7 +111,7 @@ async def test_request_ride_out_of_range_coordinates_returns_422(
 
 async def test_driver_accepts_requested_ride(client: AsyncClient, db_session) -> None:
     rider = await create_user(db_session)
-    driver = await create_user(db_session, role=UserRole.DRIVER)
+    driver = await create_user(db_session, as_driver=True)
     ride = await create_ride(db_session, rider_id=rider.user.id)
 
     response = await client.post(
@@ -138,8 +139,8 @@ async def test_accepting_already_accepted_ride_returns_conflict(
     client: AsyncClient, db_session
 ) -> None:
     rider = await create_user(db_session)
-    driver_a = await create_user(db_session, role=UserRole.DRIVER, email="driver-a@example.com")
-    driver_b = await create_user(db_session, role=UserRole.DRIVER, email="driver-b@example.com")
+    driver_a = await create_user(db_session, as_driver=True, email="driver-a@example.com")
+    driver_b = await create_user(db_session, as_driver=True, email="driver-b@example.com")
     ride = await create_ride(db_session, rider_id=rider.user.id)
     await _accept(db_session, ride.id, driver_a.user.id)
 
@@ -151,7 +152,7 @@ async def test_accepting_already_accepted_ride_returns_conflict(
 
 
 async def test_accepting_nonexistent_ride_returns_404(client: AsyncClient, db_session) -> None:
-    driver = await create_user(db_session, role=UserRole.DRIVER)
+    driver = await create_user(db_session, as_driver=True)
 
     response = await client.post(
         f"/api/v1/rides/{uuid4()}/accept", headers=auth_headers(driver.access_token)
@@ -177,7 +178,7 @@ async def test_rider_cancels_own_requested_ride(client: AsyncClient, db_session)
 
 async def test_driver_cancels_assigned_ride(client: AsyncClient, db_session) -> None:
     rider = await create_user(db_session)
-    driver = await create_user(db_session, role=UserRole.DRIVER)
+    driver = await create_user(db_session, as_driver=True)
     ride = await create_ride(db_session, rider_id=rider.user.id)
     await _accept(db_session, ride.id, driver.user.id)
 
@@ -205,7 +206,7 @@ async def test_cancelling_already_completed_ride_returns_conflict(
     client: AsyncClient, db_session
 ) -> None:
     rider = await create_user(db_session)
-    driver = await create_user(db_session, role=UserRole.DRIVER)
+    driver = await create_user(db_session, as_driver=True)
     ride = await create_ride(db_session, rider_id=rider.user.id)
     await _accept(db_session, ride.id, driver.user.id)
     await _complete(db_session, ride.id, driver.user.id)
@@ -222,7 +223,7 @@ async def test_cancelling_already_completed_ride_returns_conflict(
 
 async def test_driver_completes_accepted_ride(client: AsyncClient, db_session) -> None:
     rider = await create_user(db_session)
-    driver = await create_user(db_session, role=UserRole.DRIVER)
+    driver = await create_user(db_session, as_driver=True)
     ride = await create_ride(db_session, rider_id=rider.user.id)
     await _accept(db_session, ride.id, driver.user.id)
 
@@ -237,9 +238,9 @@ async def test_driver_completes_accepted_ride(client: AsyncClient, db_session) -
 async def test_wrong_driver_cannot_complete_ride(client: AsyncClient, db_session) -> None:
     rider = await create_user(db_session)
     assigned_driver = await create_user(
-        db_session, role=UserRole.DRIVER, email="assigned@example.com"
+        db_session, as_driver=True, email="assigned@example.com"
     )
-    other_driver = await create_user(db_session, role=UserRole.DRIVER, email="other@example.com")
+    other_driver = await create_user(db_session, as_driver=True, email="other@example.com")
     ride = await create_ride(db_session, rider_id=rider.user.id)
     await _accept(db_session, ride.id, assigned_driver.user.id)
 
@@ -254,7 +255,7 @@ async def test_completing_still_requested_ride_returns_conflict(
     client: AsyncClient, db_session
 ) -> None:
     rider = await create_user(db_session)
-    driver = await create_user(db_session, role=UserRole.DRIVER)
+    driver = await create_user(db_session, as_driver=True)
     ride = await create_ride(db_session, rider_id=rider.user.id)
 
     response = await client.post(
@@ -271,7 +272,7 @@ async def test_completing_still_requested_ride_returns_conflict(
 
 async def test_rider_history_ordered_most_recent_first(client: AsyncClient, db_session) -> None:
     rider = await create_user(db_session)
-    driver = await create_user(db_session, role=UserRole.DRIVER)
+    driver = await create_user(db_session, as_driver=True)
     ride_1 = await create_ride(db_session, rider_id=rider.user.id)
     await _accept(db_session, ride_1.id, driver.user.id)
     await _complete(db_session, ride_1.id, driver.user.id)
@@ -297,8 +298,8 @@ async def test_driver_history_scoped_to_their_rides(client: AsyncClient, db_sess
     # time - accepting doesn't free up the rider to request another until it's terminal.
     rider_a = await create_user(db_session, email="hist-rider-a@example.com")
     rider_b = await create_user(db_session, email="hist-rider-b@example.com")
-    driver_a = await create_user(db_session, role=UserRole.DRIVER, email="hist-a@example.com")
-    driver_b = await create_user(db_session, role=UserRole.DRIVER, email="hist-b@example.com")
+    driver_a = await create_user(db_session, as_driver=True, email="hist-a@example.com")
+    driver_b = await create_user(db_session, as_driver=True, email="hist-b@example.com")
 
     ride_for_a = await create_ride(db_session, rider_id=rider_a.user.id)
     await _accept(db_session, ride_for_a.id, driver_a.user.id)
@@ -307,7 +308,7 @@ async def test_driver_history_scoped_to_their_rides(client: AsyncClient, db_sess
     await _accept(db_session, ride_for_b.id, driver_b.user.id)
 
     response = await client.get(
-        "/api/v1/rides/history", headers=auth_headers(driver_a.access_token)
+        "/api/v1/rides/history?as=driver", headers=auth_headers(driver_a.access_token)
     )
 
     assert response.status_code == 200
@@ -374,7 +375,7 @@ async def test_rider_can_view_own_ride(client: AsyncClient, db_session) -> None:
 
 async def test_driver_can_view_assigned_ride(client: AsyncClient, db_session) -> None:
     rider = await create_user(db_session)
-    driver = await create_user(db_session, role=UserRole.DRIVER)
+    driver = await create_user(db_session, as_driver=True)
     ride = await create_ride(db_session, rider_id=rider.user.id)
     await _accept(db_session, ride.id, driver.user.id)
 
@@ -413,7 +414,7 @@ async def test_viewing_nonexistent_ride_returns_404(
 
 async def test_online_driver_sees_nearby_unassigned_ride(client: AsyncClient, db_session) -> None:
     rider = await create_user(db_session)
-    driver = await create_user(db_session, role=UserRole.DRIVER)
+    driver = await create_user(db_session, as_driver=True)
     await _go_online(db_session, driver.user.id)
     ride = await create_ride(
         db_session, rider_id=rider.user.id, pickup_latitude=30.05, pickup_longitude=31.23
@@ -433,7 +434,7 @@ async def test_available_rides_excludes_rides_outside_bounding_box(
     client: AsyncClient, db_session
 ) -> None:
     rider = await create_user(db_session)
-    driver = await create_user(db_session, role=UserRole.DRIVER)
+    driver = await create_user(db_session, as_driver=True)
     await _go_online(db_session, driver.user.id)
     # Far away - Alexandria vs. the driver searching from Cairo, well outside the
     # ~5km default box.
@@ -455,10 +456,10 @@ async def test_available_rides_excludes_already_assigned_rides(
 ) -> None:
     rider = await create_user(db_session)
     assigned_driver = await create_user(
-        db_session, role=UserRole.DRIVER, email="assigned-driver@example.com"
+        db_session, as_driver=True, email="assigned-driver@example.com"
     )
     searching_driver = await create_user(
-        db_session, role=UserRole.DRIVER, email="searching-driver@example.com"
+        db_session, as_driver=True, email="searching-driver@example.com"
     )
     await _go_online(db_session, searching_driver.user.id)
     ride = await create_ride(
@@ -487,7 +488,7 @@ async def test_rider_cannot_access_available_rides(client: AsyncClient, register
 async def test_offline_driver_gets_403_on_available_rides(
     client: AsyncClient, db_session
 ) -> None:
-    driver = await create_user(db_session, role=UserRole.DRIVER)  # stays offline (default)
+    driver = await create_user(db_session, as_driver=True)  # stays offline (default)
 
     response = await client.get(
         "/api/v1/rides/available?lat=30.05&lng=31.23",
@@ -499,7 +500,7 @@ async def test_offline_driver_gets_403_on_available_rides(
 
 async def test_available_rides_respects_limit_cap(client: AsyncClient, db_session) -> None:
     driver = await create_user(
-        db_session, role=UserRole.DRIVER, email="dense-area-driver@example.com"
+        db_session, as_driver=True, email="dense-area-driver@example.com"
     )
     await _go_online(db_session, driver.user.id)
 
@@ -524,7 +525,7 @@ async def test_available_rides_respects_limit_cap(client: AsyncClient, db_sessio
 async def test_available_rides_invalid_coordinates_returns_422(
     client: AsyncClient, db_session
 ) -> None:
-    driver = await create_user(db_session, role=UserRole.DRIVER)
+    driver = await create_user(db_session, as_driver=True)
     await _go_online(db_session, driver.user.id)
 
     response = await client.get(
