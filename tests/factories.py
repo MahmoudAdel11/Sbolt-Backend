@@ -11,7 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.ride.use_cases import RequestRideUseCase
 from app.application.user.use_cases import LoginUserUseCase, RegisterUserUseCase
 from app.domain.ride.entities import Ride
-from app.domain.user.entities import User, UserRole
+from app.domain.user.entities import User
+from app.infrastructure.db.repositories.driver_profile_repository import (
+    SqlAlchemyDriverProfileRepository,
+)
 from app.infrastructure.db.repositories.ride_repository import SqlAlchemyRideRepository
 from app.infrastructure.db.repositories.user_repository import SqlAlchemyUserRepository
 
@@ -32,17 +35,23 @@ async def create_user(
     password: str = DEFAULT_PASSWORD,
     full_name: str = "Test User",
     phone_number: str | None = None,
-    role: UserRole = UserRole.RIDER,
+    as_driver: bool = False,
 ) -> CreatedUser:
     """Create a persisted user with a real hashed password and a real JWT, via the app's own
-    RegisterUserUseCase/LoginUserUseCase.
+    RegisterUserUseCase/LoginUserUseCase. `as_driver=True` also creates a driver_profiles row
+    (a user can be a rider and a driver simultaneously - this doesn't make them exclusively one).
     """
     email = email or f"{uuid4()}@example.com"
     user_repository = SqlAlchemyUserRepository(session)
+    driver_profile_repository = SqlAlchemyDriverProfileRepository(session)
 
-    register_use_case = RegisterUserUseCase(user_repository)
+    register_use_case = RegisterUserUseCase(user_repository, driver_profile_repository)
     user = await register_use_case.execute(
-        email=email, password=password, full_name=full_name, phone_number=phone_number, role=role
+        email=email,
+        password=password,
+        full_name=full_name,
+        phone_number=phone_number,
+        register_as_driver=as_driver,
     )
 
     login_use_case = LoginUserUseCase(user_repository)

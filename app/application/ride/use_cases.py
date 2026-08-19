@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import UUID
 
+from app.application.driver_profile.repository import DriverProfileRepository
 from app.application.ride.repository import RideRepository
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.domain.ride.entities import Ride, RideStatus
 from app.domain.ride.geo import DEFAULT_AVAILABLE_RIDES_RADIUS_KM, bounding_box
-from app.domain.user.entities import User, UserRole
 
 # Safety-net cap, not client-configurable - the bounding box already limits result
 # size in practice, but this protects against a pathologically dense area.
@@ -101,15 +102,30 @@ class CompleteRideUseCase:
 
 
 class GetRideHistoryUseCase:
-    def __init__(self, ride_repository: RideRepository):
-        self._ride_repository = ride_repository
+    """`view` is an explicit caller choice, not inferred from stored state - a user can
+    now be both rider and driver simultaneously, so "do they have a driver profile"
+    can no longer disambiguate which history they mean; the client must say so."""
 
-    async def execute(self, user: User, limit: int, offset: int) -> tuple[list[Ride], bool]:
+    def __init__(
+        self, ride_repository: RideRepository, driver_profile_repository: DriverProfileRepository
+    ):
+        self._ride_repository = ride_repository
+        self._driver_profile_repository = driver_profile_repository
+
+    async def execute(
+        self, user_id: UUID, view: Literal["rider", "driver"], limit: int, offset: int
+    ) -> tuple[list[Ride], bool]:
         # Fetch one extra row to detect a next page without a separate COUNT(*) query.
-        if user.role == UserRole.DRIVER:
-            rides = await self._ride_repository.list_by_driver(user.id, limit + 1, offset)
+        if view == "driver":
+            # Same gating rationale as GetAvailableRidesUseCase: a clear 403 rather
+            # than silently falling back to the rider view, which would hide a
+            # client bug (asking for driver history from a non-driver account).
+            driver_profile = await self._driver_profile_repository.get_by_user_id(user_id)
+            if driver_profile is None:
+                raise ForbiddenError("This account has no driver profile.")
+            rides = await self._ride_repository.list_by_driver(user_id, limit + 1, offset)
         else:
-            rides = await self._ride_repository.list_by_rider(user.id, limit + 1, offset)
+            rides = await self._ride_repository.list_by_rider(user_id, limit + 1, offset)
 
         has_more = len(rides) > limit
         return rides[:limit], has_more
@@ -120,14 +136,18 @@ class GetAvailableRidesUseCase:
     "Nearby" is a plain bounding box (see app.domain.ride.geo) - an intentional
     simplification, not PostGIS, so results are cheap but not a precise radius."""
 
-    def __init__(self, ride_repository: RideRepository):
+    def __init__(
+        self, ride_repository: RideRepository, driver_profile_repository: DriverProfileRepository
+    ):
         self._ride_repository = ride_repository
+        self._driver_profile_repository = driver_profile_repository
 
-    async def execute(self, driver: User, latitude: float, longitude: float) -> list[Ride]:
+    async def execute(self, driver_id: UUID, latitude: float, longitude: float) -> list[Ride]:
+        driver_profile = await self._driver_profile_repository.get_by_user_id(driver_id)
         # Consistent with require_driver's role gating: a clear 403, not a silently
         # empty list, so an offline driver's client can distinguish "you're offline"
         # from "no rides nearby right now" and react accordingly (e.g. prompt to go online).
-        if not driver.is_online:
+        if driver_profile is None or not driver_profile.is_online:
             raise ForbiddenError("You must be online to view available rides.")
 
         lat_min, lat_max, lng_min, lng_max = bounding_box(
