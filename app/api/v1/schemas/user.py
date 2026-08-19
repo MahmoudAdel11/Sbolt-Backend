@@ -3,18 +3,19 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.domain.user.entities import UserRole
-
 
 class UserRegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     full_name: str = Field(min_length=1)
     phone_number: str | None = None
-    # Defaults to RIDER so existing clients that don't send this field are
-    # unaffected. Pydantic validates this against the UserRole enum automatically -
-    # any value outside {"rider", "driver"} is rejected with a 422, no manual check needed.
-    role: UserRole = UserRole.RIDER
+    # A user can be a rider and a driver simultaneously - this only controls
+    # whether a driver_profiles row is also created at registration time.
+    register_as_driver: bool = False
+
+
+class DriverProfileResponse(BaseModel):
+    is_online: bool
 
 
 class UserResponse(BaseModel):
@@ -23,8 +24,9 @@ class UserResponse(BaseModel):
     full_name: str
     phone_number: str | None
     is_active: bool
-    role: UserRole
-    is_online: bool
+    # null when the user has no driver profile - the sole source of truth for
+    # "is this user a driver", not a role/flag on the user itself.
+    driver_profile: DriverProfileResponse | None
     created_at: datetime
 
 

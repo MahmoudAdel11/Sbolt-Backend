@@ -34,6 +34,13 @@ class AvailableRidesQuery(BaseModel):
 
 
 class RideHistoryQuery(BaseModel):
+    # NOTE: `view` (below) is intentionally NOT on this model. FastAPI 0.115's
+    # Depends()-bound-Pydantic-model query params bind by field *name*, not
+    # alias/Field(alias=...) - confirmed via the generated OpenAPI schema, which
+    # exposed "view" instead of the intended "as" when this field lived here. The
+    # `as` query param is instead declared directly on the route function via
+    # Query(alias="as"), since Python can't name an attribute `as` (a keyword)
+    # for a model field to alias away from in the first place.
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
 

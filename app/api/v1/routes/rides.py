@@ -1,7 +1,7 @@
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import (
     AcceptRideUseCaseDep,
@@ -64,9 +64,10 @@ async def get_ride_history(
     current_user: CurrentUserDep,
     use_case: GetRideHistoryUseCaseDep,
     query: Annotated[RideHistoryQuery, Depends()],
+    view: Annotated[Literal["rider", "driver"], Query(alias="as")] = "rider",
 ) -> RideHistoryResponse:
     rides, has_more = await use_case.execute(
-        user=current_user, limit=query.limit, offset=query.offset
+        user_id=current_user.id, view=view, limit=query.limit, offset=query.offset
     )
     return RideHistoryResponse(items=[_to_response(ride) for ride in rides], has_more=has_more)
 
@@ -77,7 +78,9 @@ async def get_available_rides(
     use_case: GetAvailableRidesUseCaseDep,
     query: Annotated[AvailableRidesQuery, Depends()],
 ) -> list[RideResponse]:
-    rides = await use_case.execute(driver=current_user, latitude=query.lat, longitude=query.lng)
+    rides = await use_case.execute(
+        driver_id=current_user.id, latitude=query.lat, longitude=query.lng
+    )
     return [_to_response(ride) for ride in rides]
 
 
