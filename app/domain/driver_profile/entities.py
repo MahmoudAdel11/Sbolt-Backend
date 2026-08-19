@@ -4,13 +4,10 @@ from uuid import UUID
 
 
 @dataclass
-class User:
-    email: str
-    hashed_password: str
-    full_name: str
-    is_active: bool
+class DriverProfile:
+    user_id: UUID
+    is_online: bool = False
     # Server-generated on persistence; unset (None) before the repository assigns them.
     id: UUID | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
-    phone_number: str | None = None

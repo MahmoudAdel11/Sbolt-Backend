@@ -5,6 +5,7 @@ from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.driver_profile.repository import DriverProfileRepository
 from app.application.favorite_place.repository import FavoritePlaceRepository
 from app.application.favorite_place.use_cases import (
     CreateFavoritePlaceUseCase,
@@ -31,7 +32,10 @@ from app.application.user.use_cases import (
 )
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.jwt import decode_access_token
-from app.domain.user.entities import User, UserRole
+from app.domain.user.entities import User
+from app.infrastructure.db.repositories.driver_profile_repository import (
+    SqlAlchemyDriverProfileRepository,
+)
 from app.infrastructure.db.repositories.favorite_place_repository import (
     SqlAlchemyFavoritePlaceRepository,
 )
@@ -49,8 +53,20 @@ def get_user_repository(session: DbSession) -> UserRepository:
 UserRepositoryDep = Annotated[UserRepository, Depends(get_user_repository)]
 
 
-def get_register_use_case(user_repository: UserRepositoryDep) -> RegisterUserUseCase:
-    return RegisterUserUseCase(user_repository)
+def get_driver_profile_repository(session: DbSession) -> DriverProfileRepository:
+    return SqlAlchemyDriverProfileRepository(session)
+
+
+DriverProfileRepositoryDep = Annotated[
+    DriverProfileRepository, Depends(get_driver_profile_repository)
+]
+
+
+def get_register_use_case(
+    user_repository: UserRepositoryDep,
+    driver_profile_repository: DriverProfileRepositoryDep,
+) -> RegisterUserUseCase:
+    return RegisterUserUseCase(user_repository, driver_profile_repository)
 
 
 RegisterUserUseCaseDep = Annotated[RegisterUserUseCase, Depends(get_register_use_case)]
@@ -89,8 +105,11 @@ async def get_current_user(
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 
 
-async def require_driver(current_user: CurrentUserDep) -> User:
-    if current_user.role != UserRole.DRIVER:
+async def require_driver(
+    current_user: CurrentUserDep, driver_profile_repository: DriverProfileRepositoryDep
+) -> User:
+    driver_profile = await driver_profile_repository.get_by_user_id(current_user.id)
+    if driver_profile is None:
         raise ForbiddenError("This action requires a driver account.")
     return current_user
 
@@ -105,8 +124,10 @@ def get_update_profile_use_case(user_repository: UserRepositoryDep) -> UpdatePro
 UpdateProfileUseCaseDep = Annotated[UpdateProfileUseCase, Depends(get_update_profile_use_case)]
 
 
-def get_set_driver_status_use_case(user_repository: UserRepositoryDep) -> SetDriverStatusUseCase:
-    return SetDriverStatusUseCase(user_repository)
+def get_set_driver_status_use_case(
+    driver_profile_repository: DriverProfileRepositoryDep,
+) -> SetDriverStatusUseCase:
+    return SetDriverStatusUseCase(driver_profile_repository)
 
 
 SetDriverStatusUseCaseDep = Annotated[
@@ -149,8 +170,11 @@ def get_complete_ride_use_case(ride_repository: RideRepositoryDep) -> CompleteRi
 CompleteRideUseCaseDep = Annotated[CompleteRideUseCase, Depends(get_complete_ride_use_case)]
 
 
-def get_ride_history_use_case(ride_repository: RideRepositoryDep) -> GetRideHistoryUseCase:
-    return GetRideHistoryUseCase(ride_repository)
+def get_ride_history_use_case(
+    ride_repository: RideRepositoryDep,
+    driver_profile_repository: DriverProfileRepositoryDep,
+) -> GetRideHistoryUseCase:
+    return GetRideHistoryUseCase(ride_repository, driver_profile_repository)
 
 
 GetRideHistoryUseCaseDep = Annotated[GetRideHistoryUseCase, Depends(get_ride_history_use_case)]
@@ -163,8 +187,11 @@ def get_ride_detail_use_case(ride_repository: RideRepositoryDep) -> GetRideDetai
 GetRideDetailUseCaseDep = Annotated[GetRideDetailUseCase, Depends(get_ride_detail_use_case)]
 
 
-def get_available_rides_use_case(ride_repository: RideRepositoryDep) -> GetAvailableRidesUseCase:
-    return GetAvailableRidesUseCase(ride_repository)
+def get_available_rides_use_case(
+    ride_repository: RideRepositoryDep,
+    driver_profile_repository: DriverProfileRepositoryDep,
+) -> GetAvailableRidesUseCase:
+    return GetAvailableRidesUseCase(ride_repository, driver_profile_repository)
 
 
 GetAvailableRidesUseCaseDep = Annotated[
