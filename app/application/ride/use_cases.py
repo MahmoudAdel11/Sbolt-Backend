@@ -4,7 +4,7 @@ from uuid import UUID
 
 from app.application.driver_profile.repository import DriverProfileRepository
 from app.application.ride.repository import RideRepository
-from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, RideCancelledError
 from app.domain.ride.entities import Ride, RideStatus
 from app.domain.ride.geo import DEFAULT_AVAILABLE_RIDES_RADIUS_KM, bounding_box
 
@@ -48,6 +48,8 @@ class AcceptRideUseCase:
         if ride is None:
             raise NotFoundError("Ride not found.")
 
+        if ride.status == RideStatus.CANCELLED:
+            raise RideCancelledError()
         if ride.status != RideStatus.REQUESTED:
             raise ConflictError("This ride is no longer available to accept.")
 
@@ -93,6 +95,8 @@ class CompleteRideUseCase:
         # ACCEPTED is treated as the ride being underway; adding a dedicated "start"
         # endpoint here would be scope creep beyond this phase. Once one exists,
         # tighten this check to RideStatus.ONGOING only.
+        if ride.status == RideStatus.CANCELLED:
+            raise RideCancelledError()
         if ride.status not in (RideStatus.ACCEPTED, RideStatus.ONGOING):
             raise ConflictError("This ride cannot be completed from its current status.")
 
