@@ -42,3 +42,13 @@ class ForbiddenError(AppError):
     status_code = 403
     error_code = "forbidden"
     message = "You do not have permission to perform this action."
+
+
+class RideCancelledError(ConflictError):
+    """A 409 specifically because the ride was cancelled (by the rider) -
+    distinguishable from the generic conflict (e.g. already accepted by
+    another driver) so callers can show an accurate message instead of a
+    misleading "no longer available"/"taken by someone else" one."""
+
+    error_code = "ride_cancelled"
+    message = "This ride was cancelled by the rider."

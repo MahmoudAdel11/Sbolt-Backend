@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from httpx import AsyncClient
 
-from app.application.ride.use_cases import AcceptRideUseCase, CompleteRideUseCase
+from app.application.ride.use_cases import AcceptRideUseCase, CancelRideUseCase, CompleteRideUseCase
 from app.application.user.use_cases import SetDriverStatusUseCase
 from app.infrastructure.db.models.ride import RideModel
 from app.infrastructure.db.repositories.driver_profile_repository import (
@@ -33,6 +33,12 @@ async def _complete(db_session, ride_id, driver_id):
     """Drive an ACCEPTED ride to COMPLETED via the app's own CompleteRideUseCase, bypassing HTTP."""
     use_case = CompleteRideUseCase(SqlAlchemyRideRepository(db_session))
     return await use_case.execute(ride_id=ride_id, driver_id=driver_id)
+
+
+async def _cancel(db_session, ride_id, user_id):
+    """Drive a ride to CANCELLED via the app's own CancelRideUseCase, bypassing HTTP."""
+    use_case = CancelRideUseCase(SqlAlchemyRideRepository(db_session))
+    return await use_case.execute(ride_id=ride_id, user_id=user_id)
 
 
 async def _go_online(db_session, driver_id) -> None:
@@ -149,6 +155,25 @@ async def test_accepting_already_accepted_ride_returns_conflict(
     )
 
     assert response.status_code == 409
+    assert response.json()["error_code"] == "conflict"
+
+
+async def test_accepting_cancelled_ride_returns_distinguishable_conflict(
+    client: AsyncClient, db_session
+) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _cancel(db_session, ride.id, rider.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/accept", headers=auth_headers(driver.access_token)
+    )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["error_code"] == "ride_cancelled"
+    assert body["message"] == "This ride was cancelled by the rider."
 
 
 async def test_accepting_nonexistent_ride_returns_404(client: AsyncClient, db_session) -> None:
@@ -265,6 +290,25 @@ async def test_completing_still_requested_ride_returns_conflict(
     # The driver isn't assigned to this ride yet (it was never accepted), so the
     # ForbiddenError ownership check fires before the status check would.
     assert response.status_code == 403
+
+
+async def test_completing_cancelled_ride_returns_distinguishable_conflict(
+    client: AsyncClient, db_session
+) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+    await _cancel(db_session, ride.id, rider.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/complete", headers=auth_headers(driver.access_token)
+    )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["error_code"] == "ride_cancelled"
+    assert body["message"] == "This ride was cancelled by the rider."
 
 
 # --- GET /rides/history --------------------------------------------------------
