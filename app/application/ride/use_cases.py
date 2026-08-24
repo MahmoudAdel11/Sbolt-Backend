@@ -3,8 +3,10 @@ from typing import Literal
 from uuid import UUID
 
 from app.application.driver_profile.repository import DriverProfileRepository
+from app.application.rating.repository import RatingRepository
 from app.application.ride.repository import RideRepository
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, RideCancelledError
+from app.domain.rating.entities import Rating
 from app.domain.ride.entities import Ride, RideStatus
 from app.domain.ride.geo import DEFAULT_AVAILABLE_RIDES_RADIUS_KM, bounding_box
 
@@ -103,6 +105,38 @@ class CompleteRideUseCase:
         ride.status = RideStatus.COMPLETED
         ride.completed_at = datetime.now(UTC)
         return await self._ride_repository.update(ride)
+
+
+class SubmitRatingUseCase:
+    """Only the ride's rider may rate it, only once it's COMPLETED, and only once
+    ever - the third rule is enforced by RatingRepository via a DB UNIQUE
+    constraint (translated to ConflictError on violation), not checked here, so
+    there's exactly one place that can race-condition-proof it."""
+
+    def __init__(self, ride_repository: RideRepository, rating_repository: RatingRepository):
+        self._ride_repository = ride_repository
+        self._rating_repository = rating_repository
+
+    async def execute(self, ride_id: UUID, rider_id: UUID, score: int) -> Rating:
+        ride = await self._ride_repository.get_by_id(ride_id)
+        if ride is None:
+            raise NotFoundError("Ride not found.")
+
+        if ride.rider_id != rider_id:
+            raise ForbiddenError("You are not the rider for this ride.")
+
+        if ride.status != RideStatus.COMPLETED:
+            raise ConflictError("Only a completed ride can be rated.")
+
+        rating = Rating(
+            ride_id=ride.id,
+            rider_id=rider_id,
+            # ride.driver_id is guaranteed set - a ride can only reach COMPLETED
+            # after being accepted, which is what assigns driver_id in the first place.
+            driver_id=ride.driver_id,
+            score=score,
+        )
+        return await self._rating_repository.create(rating)
 
 
 class GetRideHistoryUseCase:

@@ -16,6 +16,13 @@ class UserRegisterRequest(BaseModel):
 
 class DriverProfileResponse(BaseModel):
     is_online: bool
+    vehicle_type: str | None = None
+    vehicle_color: str | None = None
+    license_plate: str | None = None
+    # Live-computed on every request (never cached/materialized) - None/0 when
+    # the driver has no ratings yet.
+    average_rating: float | None = None
+    rating_count: int = 0
 
 
 class UserResponse(BaseModel):
