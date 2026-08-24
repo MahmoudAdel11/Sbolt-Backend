@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,6 +21,11 @@ class DriverProfileModel(Base):
     is_online: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Nullable, no default - a freshly-registered driver having none of these
+    # filled in yet is a normal, expected state, not an error.
+    vehicle_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    vehicle_color: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    license_plate: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

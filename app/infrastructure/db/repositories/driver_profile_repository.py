@@ -14,6 +14,9 @@ def _to_entity(model: DriverProfileModel) -> DriverProfile:
         id=model.id,
         user_id=model.user_id,
         is_online=model.is_online,
+        vehicle_type=model.vehicle_type,
+        vehicle_color=model.vehicle_color,
+        license_plate=model.license_plate,
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -46,6 +49,9 @@ class SqlAlchemyDriverProfileRepository(DriverProfileRepository):
             raise NotFoundError("Driver profile not found.")
 
         model.is_online = driver_profile.is_online
+        model.vehicle_type = driver_profile.vehicle_type
+        model.vehicle_color = driver_profile.vehicle_color
+        model.license_plate = driver_profile.license_plate
 
         await self._session.flush()
         await self._session.refresh(model)

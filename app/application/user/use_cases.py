@@ -93,3 +93,31 @@ class SetDriverStatusUseCase:
 
         driver_profile.is_online = is_online
         return await self._driver_profile_repository.update(driver_profile)
+
+
+class UpdateDriverVehicleUseCase:
+    """Partial update of a driver's vehicle details - same "only touch fields the
+    caller actually provided" shape as UpdateFavoritePlaceUseCase/UpdateProfileUseCase."""
+
+    def __init__(self, driver_profile_repository: DriverProfileRepository):
+        self._driver_profile_repository = driver_profile_repository
+
+    async def execute(
+        self,
+        user_id: UUID,
+        vehicle_type: str | None = None,
+        vehicle_color: str | None = None,
+        license_plate: str | None = None,
+    ) -> DriverProfile:
+        driver_profile = await self._driver_profile_repository.get_by_user_id(user_id)
+        if driver_profile is None:
+            raise NotFoundError("Driver profile not found.")
+
+        if vehicle_type is not None:
+            driver_profile.vehicle_type = vehicle_type
+        if vehicle_color is not None:
+            driver_profile.vehicle_color = vehicle_color
+        if license_plate is not None:
+            driver_profile.license_plate = license_plate
+
+        return await self._driver_profile_repository.update(driver_profile)
