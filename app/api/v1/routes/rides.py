@@ -76,6 +76,8 @@ async def _to_response(
         driver_id=ride.driver_id,
         driver=driver_summary,
         status=ride.status,
+        tier=ride.tier,
+        fare=ride.fare,
         pickup_latitude=ride.pickup_latitude,
         pickup_longitude=ride.pickup_longitude,
         dropoff_latitude=ride.dropoff_latitude,
@@ -102,6 +104,7 @@ async def request_ride(
         pickup_longitude=request.pickup_longitude,
         dropoff_latitude=request.dropoff_latitude,
         dropoff_longitude=request.dropoff_longitude,
+        tier=request.tier,
     )
     return await _to_response(ride, user_repository, driver_profile_repository, rating_repository)
 
