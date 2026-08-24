@@ -5,7 +5,7 @@ from sqlalchemy import DateTime, Enum, ForeignKey, Index, Numeric, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.domain.ride.entities import RideStatus
+from app.domain.ride.entities import RideStatus, RideTier
 from app.infrastructure.db.base import Base
 
 
@@ -46,6 +46,18 @@ class RideModel(Base):
     pickup_longitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
     dropoff_latitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
     dropoff_longitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
+    tier: Mapped[RideTier] = mapped_column(
+        Enum(
+            RideTier,
+            name="ride_tier",
+            native_enum=True,
+            values_callable=lambda e: [m.value for m in e],
+        ),
+        nullable=False,
+    )
+    # Computed once at request time and frozen - never recalculated, so no
+    # server_default/onupdate makes sense here (unlike status's default).
+    fare: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     requested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
