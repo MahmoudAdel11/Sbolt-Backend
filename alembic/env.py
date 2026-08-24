@@ -10,7 +10,9 @@ from app.core.config import get_settings
 from app.infrastructure.db.base import Base
 
 # Import model modules here so Base.metadata is populated before autogenerate.
+from app.infrastructure.db.models.driver_profile import DriverProfileModel  # noqa: F401
 from app.infrastructure.db.models.favorite_place import FavoritePlaceModel  # noqa: F401
+from app.infrastructure.db.models.rating import RatingModel  # noqa: F401
 from app.infrastructure.db.models.ride import RideModel  # noqa: F401
 from app.infrastructure.db.models.user import UserModel  # noqa: F401
 
