@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.domain.ride.entities import RideStatus
+from app.domain.ride.entities import RideStatus, RideTier
 
 
 class RideRequestSchema(BaseModel):
@@ -11,6 +11,7 @@ class RideRequestSchema(BaseModel):
     pickup_longitude: float = Field(ge=-180, le=180)
     dropoff_latitude: float = Field(ge=-90, le=90)
     dropoff_longitude: float = Field(ge=-180, le=180)
+    tier: RideTier
 
 
 class RideDriverSummary(BaseModel):
@@ -35,6 +36,8 @@ class RideResponse(BaseModel):
     # for exactly what's exposed here and why it's narrower than a full profile.
     driver: RideDriverSummary | None = None
     status: RideStatus
+    tier: RideTier
+    fare: float
     pickup_latitude: float
     pickup_longitude: float
     dropoff_latitude: float

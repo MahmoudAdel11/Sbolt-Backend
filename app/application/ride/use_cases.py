@@ -7,8 +7,9 @@ from app.application.rating.repository import RatingRepository
 from app.application.ride.repository import RideRepository
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, RideCancelledError
 from app.domain.rating.entities import Rating
-from app.domain.ride.entities import Ride, RideStatus
+from app.domain.ride.entities import Ride, RideStatus, RideTier
 from app.domain.ride.geo import DEFAULT_AVAILABLE_RIDES_RADIUS_KM, bounding_box
+from app.domain.ride.pricing import compute_fare
 
 # Safety-net cap, not client-configurable - the bounding box already limits result
 # size in practice, but this protects against a pathologically dense area.
@@ -26,17 +27,23 @@ class RequestRideUseCase:
         pickup_longitude: float,
         dropoff_latitude: float,
         dropoff_longitude: float,
+        tier: RideTier,
     ) -> Ride:
         active_ride = await self._ride_repository.get_active_ride_for_rider_for_update(rider_id)
         if active_ride is not None:
             raise ConflictError("You already have an active ride.")
 
+        fare = compute_fare(
+            tier, pickup_latitude, pickup_longitude, dropoff_latitude, dropoff_longitude
+        )
         ride = Ride(
             rider_id=rider_id,
             pickup_latitude=pickup_latitude,
             pickup_longitude=pickup_longitude,
             dropoff_latitude=dropoff_latitude,
             dropoff_longitude=dropoff_longitude,
+            tier=tier,
+            fare=fare,
         )
         return await self._ride_repository.create(ride)
 

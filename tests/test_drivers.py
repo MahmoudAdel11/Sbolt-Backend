@@ -184,6 +184,7 @@ async def test_same_account_can_use_both_rider_and_driver_flows(
             "pickup_longitude": 31.23,
             "dropoff_latitude": 30.06,
             "dropoff_longitude": 31.25,
+            "tier": "economy",
         },
     )
     assert request_response.status_code == 201

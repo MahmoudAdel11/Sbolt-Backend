@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ride.use_cases import RequestRideUseCase
 from app.application.user.use_cases import LoginUserUseCase, RegisterUserUseCase
-from app.domain.ride.entities import Ride
+from app.domain.ride.entities import Ride, RideTier
 from app.domain.user.entities import User
 from app.infrastructure.db.repositories.driver_profile_repository import (
     SqlAlchemyDriverProfileRepository,
@@ -68,6 +68,7 @@ async def create_ride(
     pickup_longitude: float = 31.23,
     dropoff_latitude: float = 30.06,
     dropoff_longitude: float = 31.25,
+    tier: RideTier = RideTier.ECONOMY,
 ) -> Ride:
     """Create a persisted ride (status=REQUESTED) via the app's own RequestRideUseCase."""
     ride_repository = SqlAlchemyRideRepository(session)
@@ -78,4 +79,5 @@ async def create_ride(
         pickup_longitude=pickup_longitude,
         dropoff_latitude=dropoff_latitude,
         dropoff_longitude=dropoff_longitude,
+        tier=tier,
     )

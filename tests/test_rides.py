@@ -6,6 +6,7 @@ from httpx import AsyncClient
 
 from app.application.ride.use_cases import AcceptRideUseCase, CancelRideUseCase, CompleteRideUseCase
 from app.application.user.use_cases import SetDriverStatusUseCase
+from app.domain.ride.entities import RideTier
 from app.infrastructure.db.models.ride import RideModel
 from app.infrastructure.db.repositories.driver_profile_repository import (
     SqlAlchemyDriverProfileRepository,
@@ -19,6 +20,7 @@ VALID_RIDE_PAYLOAD = {
     "pickup_longitude": 31.23,
     "dropoff_latitude": 30.06,
     "dropoff_longitude": 31.25,
+    "tier": "economy",
 }
 
 
@@ -79,6 +81,8 @@ async def test_request_ride_success(client: AsyncClient, registered_user) -> Non
     assert body["status"] == "requested"
     assert body["rider_id"] == str(registered_user.user.id)
     assert body["driver_id"] is None
+    assert body["tier"] == "economy"
+    assert body["fare"] > 0
 
 
 async def test_request_second_ride_while_active_returns_conflict(
@@ -111,6 +115,56 @@ async def test_request_ride_out_of_range_coordinates_returns_422(
     )
 
     assert response.status_code == 422
+
+
+async def test_request_ride_missing_tier_returns_422(
+    client: AsyncClient, registered_user
+) -> None:
+    payload = {k: v for k, v in VALID_RIDE_PAYLOAD.items() if k != "tier"}
+
+    response = await client.post(
+        "/api/v1/rides",
+        headers=auth_headers(registered_user.access_token),
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
+async def test_request_ride_invalid_tier_returns_422(
+    client: AsyncClient, registered_user
+) -> None:
+    response = await client.post(
+        "/api/v1/rides",
+        headers=auth_headers(registered_user.access_token),
+        json={**VALID_RIDE_PAYLOAD, "tier": "luxury"},
+    )
+
+    assert response.status_code == 422
+
+
+async def test_request_ride_computes_correct_fare_per_tier(
+    client: AsyncClient, registered_user
+) -> None:
+    # Same pickup/dropoff as VALID_RIDE_PAYLOAD -> distance is fixed, so each
+    # tier's fare is deterministic: base_price[tier] + distance_km * per_km_rate[tier].
+    expected_fares = {"economy": 21.67, "comfort": 35.0, "premium": 55.56}
+
+    for tier, expected_fare in expected_fares.items():
+        response = await client.post(
+            "/api/v1/rides",
+            headers=auth_headers(registered_user.access_token),
+            json={**VALID_RIDE_PAYLOAD, "tier": tier},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["tier"] == tier
+        assert body["fare"] == pytest.approx(expected_fare, abs=0.01)
+
+        # One active ride at a time - cancel before requesting the next tier.
+        await client.post(
+            f"/api/v1/rides/{body['id']}/cancel", headers=auth_headers(registered_user.access_token)
+        )
 
 
 # --- POST /rides/{id}/accept -------------------------------------------------
@@ -259,6 +313,25 @@ async def test_driver_completes_accepted_ride(client: AsyncClient, db_session) -
 
     assert response.status_code == 200
     assert response.json()["status"] == "completed"
+
+
+async def test_fare_is_frozen_across_the_ride_lifecycle(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id, tier=RideTier.COMFORT)
+    requested_fare = ride.fare
+
+    accept_response = await client.post(
+        f"/api/v1/rides/{ride.id}/accept", headers=auth_headers(driver.access_token)
+    )
+    assert accept_response.json()["fare"] == pytest.approx(requested_fare)
+    assert accept_response.json()["tier"] == "comfort"
+
+    complete_response = await client.post(
+        f"/api/v1/rides/{ride.id}/complete", headers=auth_headers(driver.access_token)
+    )
+    assert complete_response.json()["fare"] == pytest.approx(requested_fare)
+    assert complete_response.json()["tier"] == "comfort"
 
 
 async def test_wrong_driver_cannot_complete_ride(client: AsyncClient, db_session) -> None:
