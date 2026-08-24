@@ -13,6 +13,7 @@ from app.application.favorite_place.use_cases import (
     ListFavoritePlacesUseCase,
     UpdateFavoritePlaceUseCase,
 )
+from app.application.rating.repository import RatingRepository
 from app.application.ride.repository import RideRepository
 from app.application.ride.use_cases import (
     AcceptRideUseCase,
@@ -22,12 +23,14 @@ from app.application.ride.use_cases import (
     GetRideDetailUseCase,
     GetRideHistoryUseCase,
     RequestRideUseCase,
+    SubmitRatingUseCase,
 )
 from app.application.user.repository import UserRepository
 from app.application.user.use_cases import (
     LoginUserUseCase,
     RegisterUserUseCase,
     SetDriverStatusUseCase,
+    UpdateDriverVehicleUseCase,
     UpdateProfileUseCase,
 )
 from app.core.exceptions import ForbiddenError, UnauthorizedError
@@ -39,6 +42,7 @@ from app.infrastructure.db.repositories.driver_profile_repository import (
 from app.infrastructure.db.repositories.favorite_place_repository import (
     SqlAlchemyFavoritePlaceRepository,
 )
+from app.infrastructure.db.repositories.rating_repository import SqlAlchemyRatingRepository
 from app.infrastructure.db.repositories.ride_repository import SqlAlchemyRideRepository
 from app.infrastructure.db.repositories.user_repository import SqlAlchemyUserRepository
 from app.infrastructure.db.session import get_db_session
@@ -135,6 +139,24 @@ SetDriverStatusUseCaseDep = Annotated[
 ]
 
 
+def get_update_driver_vehicle_use_case(
+    driver_profile_repository: DriverProfileRepositoryDep,
+) -> UpdateDriverVehicleUseCase:
+    return UpdateDriverVehicleUseCase(driver_profile_repository)
+
+
+UpdateDriverVehicleUseCaseDep = Annotated[
+    UpdateDriverVehicleUseCase, Depends(get_update_driver_vehicle_use_case)
+]
+
+
+def get_rating_repository(session: DbSession) -> RatingRepository:
+    return SqlAlchemyRatingRepository(session)
+
+
+RatingRepositoryDep = Annotated[RatingRepository, Depends(get_rating_repository)]
+
+
 def get_ride_repository(session: DbSession) -> RideRepository:
     return SqlAlchemyRideRepository(session)
 
@@ -168,6 +190,16 @@ def get_complete_ride_use_case(ride_repository: RideRepositoryDep) -> CompleteRi
 
 
 CompleteRideUseCaseDep = Annotated[CompleteRideUseCase, Depends(get_complete_ride_use_case)]
+
+
+def get_submit_rating_use_case(
+    ride_repository: RideRepositoryDep,
+    rating_repository: RatingRepositoryDep,
+) -> SubmitRatingUseCase:
+    return SubmitRatingUseCase(ride_repository, rating_repository)
+
+
+SubmitRatingUseCaseDep = Annotated[SubmitRatingUseCase, Depends(get_submit_rating_use_case)]
 
 
 def get_ride_history_use_case(

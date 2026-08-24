@@ -13,7 +13,9 @@ from app.api.dependencies import (
     GetRideDetailUseCaseDep,
     GetRideHistoryUseCaseDep,
     RequestRideUseCaseDep,
+    SubmitRatingUseCaseDep,
 )
+from app.api.v1.schemas.rating import RatingCreateRequest, RatingResponse
 from app.api.v1.schemas.ride import (
     AvailableRidesQuery,
     RideHistoryQuery,
@@ -21,6 +23,7 @@ from app.api.v1.schemas.ride import (
     RideRequestSchema,
     RideResponse,
 )
+from app.domain.rating.entities import Rating
 from app.domain.ride.entities import Ride
 
 router = APIRouter(prefix="/rides", tags=["rides"])
@@ -122,3 +125,27 @@ async def complete_ride(
 ) -> RideResponse:
     ride = await use_case.execute(ride_id=ride_id, driver_id=current_user.id)
     return _to_response(ride)
+
+
+def _to_rating_response(rating: Rating) -> RatingResponse:
+    return RatingResponse(
+        id=rating.id,
+        ride_id=rating.ride_id,
+        rider_id=rating.rider_id,
+        driver_id=rating.driver_id,
+        score=rating.score,
+        created_at=rating.created_at,
+    )
+
+
+@router.post(
+    "/{ride_id}/rating", response_model=RatingResponse, status_code=status.HTTP_201_CREATED
+)
+async def submit_rating(
+    ride_id: UUID,
+    request: RatingCreateRequest,
+    current_user: CurrentUserDep,
+    use_case: SubmitRatingUseCaseDep,
+) -> RatingResponse:
+    rating = await use_case.execute(ride_id=ride_id, rider_id=current_user.id, score=request.score)
+    return _to_rating_response(rating)

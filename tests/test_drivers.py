@@ -85,6 +85,86 @@ async def test_rider_only_account_has_no_driver_profile(client: AsyncClient, db_
     assert response.json()["driver_profile"] is None
 
 
+# --- PATCH /drivers/me/vehicle ---------------------------------------------------
+
+
+async def test_driver_can_set_vehicle_details(client: AsyncClient, db_session) -> None:
+    driver = await create_user(db_session, as_driver=True)
+
+    response = await client.patch(
+        "/api/v1/drivers/me/vehicle",
+        headers=auth_headers(driver.access_token),
+        json={"vehicle_type": "Sedan", "vehicle_color": "White", "license_plate": "ABC-123"},
+    )
+
+    assert response.status_code == 200
+    profile = response.json()["driver_profile"]
+    assert profile["vehicle_type"] == "Sedan"
+    assert profile["vehicle_color"] == "White"
+    assert profile["license_plate"] == "ABC-123"
+
+
+async def test_driver_vehicle_update_is_partial(client: AsyncClient, db_session) -> None:
+    driver = await create_user(db_session, as_driver=True)
+    await client.patch(
+        "/api/v1/drivers/me/vehicle",
+        headers=auth_headers(driver.access_token),
+        json={"vehicle_type": "Sedan", "vehicle_color": "White", "license_plate": "ABC-123"},
+    )
+
+    response = await client.patch(
+        "/api/v1/drivers/me/vehicle",
+        headers=auth_headers(driver.access_token),
+        json={"vehicle_color": "Black"},
+    )
+
+    assert response.status_code == 200
+    profile = response.json()["driver_profile"]
+    # Only vehicle_color was provided - the others must survive untouched.
+    assert profile["vehicle_type"] == "Sedan"
+    assert profile["vehicle_color"] == "Black"
+    assert profile["license_plate"] == "ABC-123"
+
+
+async def test_vehicle_details_persist_across_requests(client: AsyncClient, db_session) -> None:
+    driver = await create_user(db_session, as_driver=True)
+    await client.patch(
+        "/api/v1/drivers/me/vehicle",
+        headers=auth_headers(driver.access_token),
+        json={"vehicle_type": "Sedan"},
+    )
+
+    response = await client.get("/api/v1/auth/me", headers=auth_headers(driver.access_token))
+
+    assert response.status_code == 200
+    assert response.json()["driver_profile"]["vehicle_type"] == "Sedan"
+
+
+async def test_driver_with_no_vehicle_details_returns_none_fields(
+    client: AsyncClient, db_session
+) -> None:
+    driver = await create_user(db_session, as_driver=True)
+
+    response = await client.get("/api/v1/auth/me", headers=auth_headers(driver.access_token))
+
+    profile = response.json()["driver_profile"]
+    assert profile["vehicle_type"] is None
+    assert profile["vehicle_color"] is None
+    assert profile["license_plate"] is None
+
+
+async def test_rider_cannot_update_vehicle_details(
+    client: AsyncClient, registered_user
+) -> None:
+    response = await client.patch(
+        "/api/v1/drivers/me/vehicle",
+        headers=auth_headers(registered_user.access_token),
+        json={"vehicle_type": "Sedan"},
+    )
+
+    assert response.status_code == 403
+
+
 # --- Both roles simultaneously ---------------------------------------------------
 
 

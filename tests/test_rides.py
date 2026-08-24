@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import pytest
 from httpx import AsyncClient
 
 from app.application.ride.use_cases import AcceptRideUseCase, CancelRideUseCase, CompleteRideUseCase
@@ -309,6 +310,167 @@ async def test_completing_cancelled_ride_returns_distinguishable_conflict(
     body = response.json()
     assert body["error_code"] == "ride_cancelled"
     assert body["message"] == "This ride was cancelled by the rider."
+
+
+# --- POST /rides/{id}/rating ----------------------------------------------------
+
+
+async def test_rider_rates_completed_ride(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+    await _complete(db_session, ride.id, driver.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/rating",
+        headers=auth_headers(rider.access_token),
+        json={"score": 5},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["ride_id"] == str(ride.id)
+    assert body["rider_id"] == str(rider.user.id)
+    assert body["driver_id"] == str(driver.user.id)
+    assert body["score"] == 5
+
+
+async def test_rating_a_ride_twice_returns_conflict(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+    await _complete(db_session, ride.id, driver.user.id)
+    await client.post(
+        f"/api/v1/rides/{ride.id}/rating",
+        headers=auth_headers(rider.access_token),
+        json={"score": 4},
+    )
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/rating",
+        headers=auth_headers(rider.access_token),
+        json={"score": 5},
+    )
+
+    assert response.status_code == 409
+
+
+async def test_rating_someone_elses_ride_returns_forbidden(
+    client: AsyncClient, db_session
+) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    stranger = await create_user(db_session, email="rating-stranger@example.com")
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+    await _complete(db_session, ride.id, driver.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/rating",
+        headers=auth_headers(stranger.access_token),
+        json={"score": 3},
+    )
+
+    assert response.status_code == 403
+
+
+async def test_rating_a_non_completed_ride_returns_conflict(
+    client: AsyncClient, db_session
+) -> None:
+    rider = await create_user(db_session)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/rating",
+        headers=auth_headers(rider.access_token),
+        json={"score": 3},
+    )
+
+    assert response.status_code == 409
+
+
+async def test_rating_nonexistent_ride_returns_404(client: AsyncClient, registered_user) -> None:
+    response = await client.post(
+        f"/api/v1/rides/{uuid4()}/rating",
+        headers=auth_headers(registered_user.access_token),
+        json={"score": 3},
+    )
+
+    assert response.status_code == 404
+
+
+async def test_rating_out_of_range_score_returns_422(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+    await _complete(db_session, ride.id, driver.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/rating",
+        headers=auth_headers(rider.access_token),
+        json={"score": 6},
+    )
+
+    assert response.status_code == 422
+
+
+# --- Average rating on DriverProfileResponse --------------------------------------
+
+
+async def test_driver_with_no_ratings_has_null_average_and_zero_count(
+    client: AsyncClient, db_session
+) -> None:
+    driver = await create_user(db_session, as_driver=True)
+
+    response = await client.get("/api/v1/auth/me", headers=auth_headers(driver.access_token))
+
+    profile = response.json()["driver_profile"]
+    assert profile["average_rating"] is None
+    assert profile["rating_count"] == 0
+
+
+async def test_average_rating_reflects_single_rating(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+    await _complete(db_session, ride.id, driver.user.id)
+    await client.post(
+        f"/api/v1/rides/{ride.id}/rating",
+        headers=auth_headers(rider.access_token),
+        json={"score": 4},
+    )
+
+    response = await client.get("/api/v1/auth/me", headers=auth_headers(driver.access_token))
+
+    profile = response.json()["driver_profile"]
+    assert profile["average_rating"] == 4.0
+    assert profile["rating_count"] == 1
+
+
+async def test_average_rating_reflects_multiple_ratings(client: AsyncClient, db_session) -> None:
+    driver = await create_user(db_session, as_driver=True)
+    scores = [5, 3, 4]
+
+    for score in scores:
+        rider = await create_user(db_session, email=f"rater-{score}-{uuid4()}@example.com")
+        ride = await create_ride(db_session, rider_id=rider.user.id)
+        await _accept(db_session, ride.id, driver.user.id)
+        await _complete(db_session, ride.id, driver.user.id)
+        await client.post(
+            f"/api/v1/rides/{ride.id}/rating",
+            headers=auth_headers(rider.access_token),
+            json={"score": score},
+        )
+
+    response = await client.get("/api/v1/auth/me", headers=auth_headers(driver.access_token))
+
+    profile = response.json()["driver_profile"]
+    assert profile["rating_count"] == 3
+    assert profile["average_rating"] == pytest.approx(4.0)  # (5 + 3 + 4) / 3
 
 
 # --- GET /rides/history --------------------------------------------------------
