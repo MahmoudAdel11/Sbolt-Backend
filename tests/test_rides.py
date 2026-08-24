@@ -593,6 +593,95 @@ async def test_driver_can_view_assigned_ride(client: AsyncClient, db_session) ->
     assert response.json()["id"] == str(ride.id)
 
 
+async def test_requested_ride_has_null_driver(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+
+    response = await client.get(
+        f"/api/v1/rides/{ride.id}", headers=auth_headers(rider.access_token)
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["driver_id"] is None
+    assert body["driver"] is None
+
+
+async def test_accepted_ride_embeds_driver_summary(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True, full_name="Jane Driver")
+    await client.patch(
+        "/api/v1/drivers/me/vehicle",
+        headers=auth_headers(driver.access_token),
+        json={"vehicle_type": "Sedan", "vehicle_color": "White", "license_plate": "ABC-123"},
+    )
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+
+    response = await client.get(
+        f"/api/v1/rides/{ride.id}", headers=auth_headers(rider.access_token)
+    )
+
+    assert response.status_code == 200
+    driver_summary = response.json()["driver"]
+    assert driver_summary["name"] == "Jane Driver"
+    assert driver_summary["vehicle_type"] == "Sedan"
+    assert driver_summary["vehicle_color"] == "White"
+    assert driver_summary["license_plate"] == "ABC-123"
+    assert driver_summary["average_rating"] is None
+    assert driver_summary["rating_count"] == 0
+
+
+async def test_completed_ride_embeds_driver_summary_with_average_rating(
+    client: AsyncClient, db_session
+) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+    await _complete(db_session, ride.id, driver.user.id)
+    await client.post(
+        f"/api/v1/rides/{ride.id}/rating",
+        headers=auth_headers(rider.access_token),
+        json={"score": 5},
+    )
+
+    response = await client.get(
+        f"/api/v1/rides/{ride.id}", headers=auth_headers(rider.access_token)
+    )
+
+    driver_summary = response.json()["driver"]
+    assert driver_summary["average_rating"] == 5.0
+    assert driver_summary["rating_count"] == 1
+
+
+async def test_embedded_driver_summary_excludes_pii(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(
+        db_session, as_driver=True, phone_number="+201234567890"
+    )
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+
+    response = await client.get(
+        f"/api/v1/rides/{ride.id}", headers=auth_headers(rider.access_token)
+    )
+
+    driver_summary = response.json()["driver"]
+    # Explicit absence check, not just "the test passed" - a stranger (the
+    # rider) must never see the driver's email or phone number.
+    assert "email" not in driver_summary
+    assert "phone_number" not in driver_summary
+    assert set(driver_summary.keys()) == {
+        "name",
+        "vehicle_type",
+        "vehicle_color",
+        "license_plate",
+        "average_rating",
+        "rating_count",
+    }
+
+
 async def test_unrelated_user_cannot_view_ride(client: AsyncClient, db_session) -> None:
     rider = await create_user(db_session)
     stranger = await create_user(db_session, email="viewer-stranger@example.com")

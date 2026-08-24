@@ -13,10 +13,27 @@ class RideRequestSchema(BaseModel):
     dropoff_longitude: float = Field(ge=-180, le=180)
 
 
+class RideDriverSummary(BaseModel):
+    """Public-facing driver details shown to the ride's rider - a stranger,
+    not the driver themselves. Deliberately narrower than DriverProfileResponse
+    (the driver's own view of their profile): no email, no phone_number, no
+    other PII - only what a rider needs to identify their driver."""
+
+    name: str
+    vehicle_type: str | None
+    vehicle_color: str | None
+    license_plate: str | None
+    average_rating: float | None
+    rating_count: int
+
+
 class RideResponse(BaseModel):
     id: UUID
     rider_id: UUID
     driver_id: UUID | None
+    # Null until a driver accepts (status == requested) - see RideDriverSummary
+    # for exactly what's exposed here and why it's narrower than a full profile.
+    driver: RideDriverSummary | None = None
     status: RideStatus
     pickup_latitude: float
     pickup_longitude: float
