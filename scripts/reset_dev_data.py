@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Local-development-only cleanup for accumulated test ride data.
 
-Deletes every row from the `rides` table so repeated manual testing sessions
-don't keep accumulating stale REQUESTED/ACCEPTED rides that show up as
-confusing "phantom" rides later. Full-table, not "non-terminal only" - once
-a session's ride flow has been manually verified, its completed history has
+Deletes every row from the `rides` table (and, since ratings.ride_id
+references rides.id, every row from `ratings` first - a rating can't
+outlive the ride it's for) so repeated manual testing sessions don't keep
+accumulating stale REQUESTED/ACCEPTED rides that show up as confusing
+"phantom" rides later. Full-table, not "non-terminal only" - once a
+session's ride flow has been manually verified, its completed history has
 no further test value, and deleting everything gives a predictable clean
 slate rather than a partially-reset one. If you want to keep completed
 history around, don't run this.
 
-Does NOT touch users, driver_profiles, or favorite_places - only `rides`.
+Does NOT touch users, driver_profiles, or favorite_places - only `ratings`
+and `rides`.
 
 Deliberately NOT an API endpoint - this must never be reachable from a
 running server in any environment. It's a standalone script, run by hand:
@@ -55,12 +58,15 @@ def _assert_local_database(database_url: str) -> None:
         sys.exit(1)
 
 
-async def _delete_all_rides(database_url: str) -> int:
+async def _delete_all_rides(database_url: str) -> tuple[int, int]:
+    """Deletes ratings before rides - ratings.ride_id has a foreign key to
+    rides.id, so rides can't be deleted first without violating it."""
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
-            result = await conn.execute(text("DELETE FROM rides"))
-            return result.rowcount
+            ratings_result = await conn.execute(text("DELETE FROM ratings"))
+            rides_result = await conn.execute(text("DELETE FROM rides"))
+            return ratings_result.rowcount, rides_result.rowcount
     finally:
         await engine.dispose()
 
@@ -69,15 +75,15 @@ def _confirm(skip_prompt: bool) -> bool:
     if skip_prompt:
         return True
     answer = input(
-        "This will permanently delete ALL rows from the 'rides' table in "
-        "the local dev database. Continue? [y/N] "
+        "This will permanently delete ALL rows from the 'ratings' and 'rides' "
+        "tables in the local dev database. Continue? [y/N] "
     )
     return answer.strip().lower() in ("y", "yes")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Delete all rows from the local dev database's 'rides' table."
+        description="Delete all rows from the local dev database's 'ratings' and 'rides' tables."
     )
     parser.add_argument(
         "--yes",
@@ -96,9 +102,9 @@ def main() -> None:
         print("Aborted - no changes made.")
         sys.exit(0)
 
-    deleted = asyncio.run(_delete_all_rides(database_url))
+    ratings_deleted, rides_deleted = asyncio.run(_delete_all_rides(database_url))
     print(
-        f"Deleted {deleted} row(s) from 'rides'. "
+        f"Deleted {ratings_deleted} rating(s) and {rides_deleted} ride(s). "
         "users, driver_profiles, and favorite_places were not touched."
     )
 
