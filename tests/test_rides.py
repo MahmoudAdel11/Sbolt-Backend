@@ -4,7 +4,12 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
-from app.application.ride.use_cases import AcceptRideUseCase, CancelRideUseCase, CompleteRideUseCase
+from app.application.ride.use_cases import (
+    AcceptRideUseCase,
+    CancelRideUseCase,
+    CompleteRideUseCase,
+    StartRideUseCase,
+)
 from app.application.user.use_cases import SetDriverStatusUseCase
 from app.domain.ride.entities import RideTier
 from app.infrastructure.db.models.ride import RideModel
@@ -29,6 +34,12 @@ async def _accept(db_session, ride_id, driver_id):
     setup for tests that aren't specifically about the accept endpoint itself.
     """
     use_case = AcceptRideUseCase(SqlAlchemyRideRepository(db_session))
+    return await use_case.execute(ride_id=ride_id, driver_id=driver_id)
+
+
+async def _start(db_session, ride_id, driver_id):
+    """Drive an ACCEPTED ride to ONGOING via the app's own StartRideUseCase, bypassing HTTP."""
+    use_case = StartRideUseCase(SqlAlchemyRideRepository(db_session))
     return await use_case.execute(ride_id=ride_id, driver_id=driver_id)
 
 
@@ -241,6 +252,121 @@ async def test_accepting_nonexistent_ride_returns_404(client: AsyncClient, db_se
     assert response.status_code == 404
 
 
+# --- POST /rides/{id}/start ---------------------------------------------------
+
+
+async def test_driver_starts_accepted_ride(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/start", headers=auth_headers(driver.access_token)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ongoing"
+
+    detail = await client.get(
+        f"/api/v1/rides/{ride.id}", headers=auth_headers(driver.access_token)
+    )
+    assert detail.json()["status"] == "ongoing"
+
+
+async def test_wrong_driver_cannot_start_ride(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    assigned_driver = await create_user(
+        db_session, as_driver=True, email="assigned@example.com"
+    )
+    other_driver = await create_user(db_session, as_driver=True, email="other@example.com")
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, assigned_driver.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/start", headers=auth_headers(other_driver.access_token)
+    )
+
+    assert response.status_code == 403
+
+
+async def test_starting_still_requested_ride_returns_conflict(
+    client: AsyncClient, db_session
+) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/start", headers=auth_headers(driver.access_token)
+    )
+
+    # The driver isn't assigned to this ride yet (it was never accepted), so the
+    # ForbiddenError ownership check fires before the status check would.
+    assert response.status_code == 403
+
+
+async def test_starting_already_ongoing_ride_returns_conflict(
+    client: AsyncClient, db_session
+) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+    await _start(db_session, ride.id, driver.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/start", headers=auth_headers(driver.access_token)
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "conflict"
+
+
+async def test_starting_completed_ride_returns_conflict(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+    await _complete(db_session, ride.id, driver.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/start", headers=auth_headers(driver.access_token)
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "conflict"
+
+
+async def test_starting_cancelled_ride_returns_distinguishable_conflict(
+    client: AsyncClient, db_session
+) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+    await _cancel(db_session, ride.id, rider.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/start", headers=auth_headers(driver.access_token)
+    )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["error_code"] == "ride_cancelled"
+    assert body["message"] == "This ride was cancelled by the rider."
+
+
+async def test_starting_nonexistent_ride_returns_404(client: AsyncClient, db_session) -> None:
+    driver = await create_user(db_session, as_driver=True)
+
+    response = await client.post(
+        f"/api/v1/rides/{uuid4()}/start", headers=auth_headers(driver.access_token)
+    )
+
+    assert response.status_code == 404
+
+
 # --- POST /rides/{id}/cancel --------------------------------------------------
 
 
@@ -306,6 +432,24 @@ async def test_driver_completes_accepted_ride(client: AsyncClient, db_session) -
     driver = await create_user(db_session, as_driver=True)
     ride = await create_ride(db_session, rider_id=rider.user.id)
     await _accept(db_session, ride.id, driver.user.id)
+
+    response = await client.post(
+        f"/api/v1/rides/{ride.id}/complete", headers=auth_headers(driver.access_token)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+
+
+async def test_driver_completes_ongoing_ride(client: AsyncClient, db_session) -> None:
+    """Regression guard: CompleteRideUseCase must permanently accept both ACCEPTED and
+    ONGOING as valid starting statuses - start is advisory, never a required gate on
+    completion. This must keep passing even if the guard is touched again later."""
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+    await _start(db_session, ride.id, driver.user.id)
 
     response = await client.post(
         f"/api/v1/rides/{ride.id}/complete", headers=auth_headers(driver.access_token)
