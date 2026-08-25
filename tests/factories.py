@@ -15,6 +15,9 @@ from app.domain.user.entities import User
 from app.infrastructure.db.repositories.driver_profile_repository import (
     SqlAlchemyDriverProfileRepository,
 )
+from app.infrastructure.db.repositories.refresh_token_repository import (
+    SqlAlchemyRefreshTokenRepository,
+)
 from app.infrastructure.db.repositories.ride_repository import SqlAlchemyRideRepository
 from app.infrastructure.db.repositories.user_repository import SqlAlchemyUserRepository
 
@@ -26,6 +29,7 @@ class CreatedUser:
     user: User
     password: str
     access_token: str
+    refresh_token: str
 
 
 async def create_user(
@@ -44,9 +48,12 @@ async def create_user(
     email = email or f"{uuid4()}@example.com"
     user_repository = SqlAlchemyUserRepository(session)
     driver_profile_repository = SqlAlchemyDriverProfileRepository(session)
+    refresh_token_repository = SqlAlchemyRefreshTokenRepository(session)
 
-    register_use_case = RegisterUserUseCase(user_repository, driver_profile_repository)
-    user = await register_use_case.execute(
+    register_use_case = RegisterUserUseCase(
+        user_repository, driver_profile_repository, refresh_token_repository
+    )
+    result = await register_use_case.execute(
         email=email,
         password=password,
         full_name=full_name,
@@ -54,10 +61,15 @@ async def create_user(
         register_as_driver=as_driver,
     )
 
-    login_use_case = LoginUserUseCase(user_repository)
-    access_token = await login_use_case.execute(email=email, password=password)
+    login_use_case = LoginUserUseCase(user_repository, refresh_token_repository)
+    tokens = await login_use_case.execute(email=email, password=password)
 
-    return CreatedUser(user=user, password=password, access_token=access_token)
+    return CreatedUser(
+        user=result.user,
+        password=password,
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+    )
 
 
 async def create_ride(
