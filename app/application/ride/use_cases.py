@@ -88,6 +88,27 @@ class CancelRideUseCase:
         return await self._ride_repository.update(ride)
 
 
+class StartRideUseCase:
+    def __init__(self, ride_repository: RideRepository):
+        self._ride_repository = ride_repository
+
+    async def execute(self, ride_id: UUID, driver_id: UUID) -> Ride:
+        ride = await self._ride_repository.get_by_id(ride_id)
+        if ride is None:
+            raise NotFoundError("Ride not found.")
+
+        if ride.driver_id != driver_id:
+            raise ForbiddenError("You are not the driver for this ride.")
+
+        if ride.status == RideStatus.CANCELLED:
+            raise RideCancelledError()
+        if ride.status != RideStatus.ACCEPTED:
+            raise ConflictError("This ride cannot be started from its current status.")
+
+        ride.status = RideStatus.ONGOING
+        return await self._ride_repository.update(ride)
+
+
 class CompleteRideUseCase:
     def __init__(self, ride_repository: RideRepository):
         self._ride_repository = ride_repository
@@ -100,10 +121,11 @@ class CompleteRideUseCase:
         if ride.driver_id != driver_id:
             raise ForbiddenError("You are not the driver for this ride.")
 
-        # No separate ACCEPTED -> ONGOING ("start ride") transition exists yet, so
-        # ACCEPTED is treated as the ride being underway; adding a dedicated "start"
-        # endpoint here would be scope creep beyond this phase. Once one exists,
-        # tighten this check to RideStatus.ONGOING only.
+        # Deliberately accepts BOTH ACCEPTED and ONGOING, permanently - calling
+        # StartRideUseCase first is advisory, never required. A driver who forgets
+        # (or never bothers) to call start must still be able to complete a real
+        # ride; gating completion on start would trade a cosmetic status value for
+        # a real way to get a driver stuck.
         if ride.status == RideStatus.CANCELLED:
             raise RideCancelledError()
         if ride.status not in (RideStatus.ACCEPTED, RideStatus.ONGOING):

@@ -25,6 +25,7 @@ from app.application.ride.use_cases import (
     GetRideDetailUseCase,
     GetRideHistoryUseCase,
     RequestRideUseCase,
+    StartRideUseCase,
     SubmitRatingUseCase,
 )
 from app.application.user.repository import UserRepository
@@ -219,6 +220,13 @@ def get_cancel_ride_use_case(ride_repository: RideRepositoryDep) -> CancelRideUs
 
 
 CancelRideUseCaseDep = Annotated[CancelRideUseCase, Depends(get_cancel_ride_use_case)]
+
+
+def get_start_ride_use_case(ride_repository: RideRepositoryDep) -> StartRideUseCase:
+    return StartRideUseCase(ride_repository)
+
+
+StartRideUseCaseDep = Annotated[StartRideUseCase, Depends(get_start_ride_use_case)]
 
 
 def get_complete_ride_use_case(ride_repository: RideRepositoryDep) -> CompleteRideUseCase:
