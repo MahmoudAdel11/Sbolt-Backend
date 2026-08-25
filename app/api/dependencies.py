@@ -14,6 +14,8 @@ from app.application.favorite_place.use_cases import (
     UpdateFavoritePlaceUseCase,
 )
 from app.application.rating.repository import RatingRepository
+from app.application.refresh_token.repository import RefreshTokenRepository
+from app.application.refresh_token.use_cases import LogoutUseCase, RefreshAccessTokenUseCase
 from app.application.ride.repository import RideRepository
 from app.application.ride.use_cases import (
     AcceptRideUseCase,
@@ -43,6 +45,9 @@ from app.infrastructure.db.repositories.favorite_place_repository import (
     SqlAlchemyFavoritePlaceRepository,
 )
 from app.infrastructure.db.repositories.rating_repository import SqlAlchemyRatingRepository
+from app.infrastructure.db.repositories.refresh_token_repository import (
+    SqlAlchemyRefreshTokenRepository,
+)
 from app.infrastructure.db.repositories.ride_repository import SqlAlchemyRideRepository
 from app.infrastructure.db.repositories.user_repository import SqlAlchemyUserRepository
 from app.infrastructure.db.session import get_db_session
@@ -66,21 +71,52 @@ DriverProfileRepositoryDep = Annotated[
 ]
 
 
+def get_refresh_token_repository(session: DbSession) -> RefreshTokenRepository:
+    return SqlAlchemyRefreshTokenRepository(session)
+
+
+RefreshTokenRepositoryDep = Annotated[
+    RefreshTokenRepository, Depends(get_refresh_token_repository)
+]
+
+
 def get_register_use_case(
     user_repository: UserRepositoryDep,
     driver_profile_repository: DriverProfileRepositoryDep,
+    refresh_token_repository: RefreshTokenRepositoryDep,
 ) -> RegisterUserUseCase:
-    return RegisterUserUseCase(user_repository, driver_profile_repository)
+    return RegisterUserUseCase(user_repository, driver_profile_repository, refresh_token_repository)
 
 
 RegisterUserUseCaseDep = Annotated[RegisterUserUseCase, Depends(get_register_use_case)]
 
 
-def get_login_use_case(user_repository: UserRepositoryDep) -> LoginUserUseCase:
-    return LoginUserUseCase(user_repository)
+def get_login_use_case(
+    user_repository: UserRepositoryDep, refresh_token_repository: RefreshTokenRepositoryDep
+) -> LoginUserUseCase:
+    return LoginUserUseCase(user_repository, refresh_token_repository)
 
 
 LoginUserUseCaseDep = Annotated[LoginUserUseCase, Depends(get_login_use_case)]
+
+
+def get_refresh_access_token_use_case(
+    refresh_token_repository: RefreshTokenRepositoryDep,
+    user_repository: UserRepositoryDep,
+) -> RefreshAccessTokenUseCase:
+    return RefreshAccessTokenUseCase(refresh_token_repository, user_repository)
+
+
+RefreshAccessTokenUseCaseDep = Annotated[
+    RefreshAccessTokenUseCase, Depends(get_refresh_access_token_use_case)
+]
+
+
+def get_logout_use_case(refresh_token_repository: RefreshTokenRepositoryDep) -> LogoutUseCase:
+    return LogoutUseCase(refresh_token_repository)
+
+
+LogoutUseCaseDep = Annotated[LogoutUseCase, Depends(get_logout_use_case)]
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
