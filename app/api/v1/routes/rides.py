@@ -15,6 +15,7 @@ from app.api.dependencies import (
     GetRideHistoryUseCaseDep,
     RatingRepositoryDep,
     RequestRideUseCaseDep,
+    StartRideUseCaseDep,
     SubmitRatingUseCaseDep,
     UserRepositoryDep,
 )
@@ -171,6 +172,19 @@ async def accept_ride(
     ride_id: UUID,
     current_user: DriverUserDep,
     use_case: AcceptRideUseCaseDep,
+    user_repository: UserRepositoryDep,
+    driver_profile_repository: DriverProfileRepositoryDep,
+    rating_repository: RatingRepositoryDep,
+) -> RideResponse:
+    ride = await use_case.execute(ride_id=ride_id, driver_id=current_user.id)
+    return await _to_response(ride, user_repository, driver_profile_repository, rating_repository)
+
+
+@router.post("/{ride_id}/start", response_model=RideResponse)
+async def start_ride(
+    ride_id: UUID,
+    current_user: DriverUserDep,
+    use_case: StartRideUseCaseDep,
     user_repository: UserRepositoryDep,
     driver_profile_repository: DriverProfileRepositoryDep,
     rating_repository: RatingRepositoryDep,
