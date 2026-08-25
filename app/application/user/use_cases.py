@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from uuid import UUID
 
 from app.application.driver_profile.repository import DriverProfileRepository
+from app.application.refresh_token.repository import RefreshTokenRepository
 from app.application.user.repository import UserRepository
 from app.core.exceptions import ConflictError, NotFoundError, UnauthorizedError
 from app.core.jwt import create_access_token
@@ -9,12 +11,28 @@ from app.domain.driver_profile.entities import DriverProfile
 from app.domain.user.entities import User
 
 
+@dataclass
+class TokenPair:
+    access_token: str
+    refresh_token: str
+
+
+@dataclass
+class RegisterResult:
+    user: User
+    tokens: TokenPair
+
+
 class RegisterUserUseCase:
     def __init__(
-        self, user_repository: UserRepository, driver_profile_repository: DriverProfileRepository
+        self,
+        user_repository: UserRepository,
+        driver_profile_repository: DriverProfileRepository,
+        refresh_token_repository: RefreshTokenRepository,
     ):
         self._user_repository = user_repository
         self._driver_profile_repository = driver_profile_repository
+        self._refresh_token_repository = refresh_token_repository
 
     async def execute(
         self,
@@ -23,7 +41,7 @@ class RegisterUserUseCase:
         full_name: str,
         phone_number: str | None = None,
         register_as_driver: bool = False,
-    ) -> User:
+    ) -> RegisterResult:
         if await self._user_repository.exists_by_email(email):
             raise ConflictError("A user with this email already exists.")
 
@@ -43,19 +61,29 @@ class RegisterUserUseCase:
             # user with no driver profile.
             await self._driver_profile_repository.create(DriverProfile(user_id=user.id))
 
-        return user
+        # Registration now logs the user straight in (see RefreshTokenResponse in
+        # the API layer) rather than requiring a separate /auth/login call.
+        access_token = create_access_token(subject=str(user.id))
+        refresh_token = await self._refresh_token_repository.create(user.id)
+
+        return RegisterResult(user=user, tokens=TokenPair(access_token, refresh_token))
 
 
 class LoginUserUseCase:
-    def __init__(self, user_repository: UserRepository):
+    def __init__(
+        self, user_repository: UserRepository, refresh_token_repository: RefreshTokenRepository
+    ):
         self._user_repository = user_repository
+        self._refresh_token_repository = refresh_token_repository
 
-    async def execute(self, email: str, password: str) -> str:
+    async def execute(self, email: str, password: str) -> TokenPair:
         user = await self._user_repository.get_by_email(email)
         if user is None or not verify_password(password, user.hashed_password):
             raise UnauthorizedError("Incorrect email or password.")
 
-        return create_access_token(subject=str(user.id))
+        access_token = create_access_token(subject=str(user.id))
+        refresh_token = await self._refresh_token_repository.create(user.id)
+        return TokenPair(access_token=access_token, refresh_token=refresh_token)
 
 
 class UpdateProfileUseCase:
