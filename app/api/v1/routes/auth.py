@@ -4,12 +4,18 @@ from app.api.dependencies import (
     CurrentUserDep,
     DriverProfileRepositoryDep,
     LoginUserUseCaseDep,
+    LogoutUseCaseDep,
     RatingRepositoryDep,
+    RefreshAccessTokenUseCaseDep,
     RegisterUserUseCaseDep,
 )
 from app.api.v1.schemas.user import (
+    AccessTokenResponse,
     DriverProfileResponse,
     LoginRequest,
+    LogoutRequest,
+    RefreshRequest,
+    RegisterResponse,
     TokenResponse,
     UserRegisterRequest,
     UserResponse,
@@ -48,7 +54,7 @@ async def _to_response(
     )
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(get_settings().rate_limit_auth)
 async def register(
     request: Request,
@@ -56,16 +62,21 @@ async def register(
     use_case: RegisterUserUseCaseDep,
     driver_profile_repository: DriverProfileRepositoryDep,
     rating_repository: RatingRepositoryDep,
-) -> UserResponse:
-    user = await use_case.execute(
+) -> RegisterResponse:
+    result = await use_case.execute(
         email=body.email,
         password=body.password,
         full_name=body.full_name,
         phone_number=body.phone_number,
         register_as_driver=body.register_as_driver,
     )
-    driver_profile = await driver_profile_repository.get_by_user_id(user.id)
-    return await _to_response(user, driver_profile, rating_repository)
+    driver_profile = await driver_profile_repository.get_by_user_id(result.user.id)
+    user_response = await _to_response(result.user, driver_profile, rating_repository)
+    return RegisterResponse(
+        user=user_response,
+        access_token=result.tokens.access_token,
+        refresh_token=result.tokens.refresh_token,
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -73,8 +84,8 @@ async def register(
 async def login(
     request: Request, body: LoginRequest, use_case: LoginUserUseCaseDep
 ) -> TokenResponse:
-    access_token = await use_case.execute(email=body.email, password=body.password)
-    return TokenResponse(access_token=access_token)
+    tokens = await use_case.execute(email=body.email, password=body.password)
+    return TokenResponse(access_token=tokens.access_token, refresh_token=tokens.refresh_token)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -87,4 +98,14 @@ async def me(
     return await _to_response(current_user, driver_profile, rating_repository)
 
 
-# TODO(phase-3): refresh tokens.
+@router.post("/refresh", response_model=AccessTokenResponse)
+async def refresh(
+    body: RefreshRequest, use_case: RefreshAccessTokenUseCaseDep
+) -> AccessTokenResponse:
+    access_token = await use_case.execute(refresh_token=body.refresh_token)
+    return AccessTokenResponse(access_token=access_token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(body: LogoutRequest, use_case: LogoutUseCaseDep) -> None:
+    await use_case.execute(refresh_token=body.refresh_token)
