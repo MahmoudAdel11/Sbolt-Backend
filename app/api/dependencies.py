@@ -21,6 +21,7 @@ from app.application.ride.use_cases import (
     AcceptRideUseCase,
     CancelRideUseCase,
     CompleteRideUseCase,
+    GetActiveRideUseCase,
     GetAvailableRidesUseCase,
     GetRideDetailUseCase,
     GetRideHistoryUseCase,
@@ -261,6 +262,13 @@ def get_ride_detail_use_case(ride_repository: RideRepositoryDep) -> GetRideDetai
 
 
 GetRideDetailUseCaseDep = Annotated[GetRideDetailUseCase, Depends(get_ride_detail_use_case)]
+
+
+def get_active_ride_use_case(ride_repository: RideRepositoryDep) -> GetActiveRideUseCase:
+    return GetActiveRideUseCase(ride_repository)
+
+
+GetActiveRideUseCaseDep = Annotated[GetActiveRideUseCase, Depends(get_active_ride_use_case)]
 
 
 def get_available_rides_use_case(

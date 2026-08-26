@@ -800,6 +800,98 @@ async def test_history_invalid_limit_returns_422(client: AsyncClient, registered
     assert response.status_code == 422
 
 
+# --- GET /rides/active -----------------------------------------------------------
+
+
+async def test_active_ride_returns_requested_ride(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+
+    response = await client.get(
+        "/api/v1/rides/active", headers=auth_headers(rider.access_token)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(ride.id)
+    assert response.json()["status"] == "requested"
+
+
+async def test_active_ride_returns_accepted_ride(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+
+    response = await client.get(
+        "/api/v1/rides/active", headers=auth_headers(rider.access_token)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(ride.id)
+    assert response.json()["status"] == "accepted"
+
+
+async def test_active_ride_returns_ongoing_ride(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, ride.id, driver.user.id)
+    await _start(db_session, ride.id, driver.user.id)
+
+    response = await client.get(
+        "/api/v1/rides/active", headers=auth_headers(rider.access_token)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(ride.id)
+    assert response.json()["status"] == "ongoing"
+
+
+async def test_active_ride_returns_null_when_only_completed_or_cancelled(
+    client: AsyncClient, db_session
+) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(db_session, as_driver=True)
+    completed_ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _accept(db_session, completed_ride.id, driver.user.id)
+    await _complete(db_session, completed_ride.id, driver.user.id)
+    cancelled_ride = await create_ride(db_session, rider_id=rider.user.id)
+    await _cancel(db_session, cancelled_ride.id, rider.user.id)
+
+    response = await client.get(
+        "/api/v1/rides/active", headers=auth_headers(rider.access_token)
+    )
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+async def test_active_ride_returns_null_when_no_rides_at_all(
+    client: AsyncClient, registered_user
+) -> None:
+    response = await client.get(
+        "/api/v1/rides/active", headers=auth_headers(registered_user.access_token)
+    )
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+async def test_active_ride_is_scoped_to_the_calling_rider(
+    client: AsyncClient, db_session
+) -> None:
+    rider = await create_user(db_session)
+    other_rider = await create_user(db_session, email="active-ride-other-rider@example.com")
+    await create_ride(db_session, rider_id=other_rider.user.id)
+
+    response = await client.get(
+        "/api/v1/rides/active", headers=auth_headers(rider.access_token)
+    )
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
 # --- GET /rides/{id} -----------------------------------------------------------
 
 
