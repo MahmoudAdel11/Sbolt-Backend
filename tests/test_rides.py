@@ -44,7 +44,15 @@ async def _start(db_session, ride_id, driver_id):
 
 
 async def _complete(db_session, ride_id, driver_id):
-    """Drive an ACCEPTED ride to COMPLETED via the app's own CompleteRideUseCase, bypassing HTTP."""
+    """Drive an ACCEPTED ride to COMPLETED, bypassing HTTP - via the app's own
+    StartRideUseCase then CompleteRideUseCase, since ONGOING is now a required
+    prerequisite for completion. Callers using this purely as setup (ratings,
+    history, driver-summary tests, etc.) don't need to know that; tests that
+    specifically exercise the start-required guard call the use cases directly
+    instead of going through this helper."""
+    await StartRideUseCase(SqlAlchemyRideRepository(db_session)).execute(
+        ride_id=ride_id, driver_id=driver_id
+    )
     use_case = CompleteRideUseCase(SqlAlchemyRideRepository(db_session))
     return await use_case.execute(ride_id=ride_id, driver_id=driver_id)
 
@@ -427,7 +435,14 @@ async def test_cancelling_already_completed_ride_returns_conflict(
 # --- POST /rides/{id}/complete ------------------------------------------------
 
 
-async def test_driver_completes_accepted_ride(client: AsyncClient, db_session) -> None:
+async def test_completing_accepted_ride_without_starting_returns_ride_not_started(
+    client: AsyncClient, db_session
+) -> None:
+    """Reverses a previously-passing test's expected outcome: completing directly
+    from ACCEPTED (skipping /start) used to succeed (200) when start was advisory.
+    Per an explicit product decision, ONGOING is now a required prerequisite for
+    completion, so this must now 409 with a distinguishable, recoverable error -
+    "start it first" - rather than the generic conflict message."""
     rider = await create_user(db_session)
     driver = await create_user(db_session, as_driver=True)
     ride = await create_ride(db_session, rider_id=rider.user.id)
@@ -437,14 +452,16 @@ async def test_driver_completes_accepted_ride(client: AsyncClient, db_session) -
         f"/api/v1/rides/{ride.id}/complete", headers=auth_headers(driver.access_token)
     )
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "completed"
+    assert response.status_code == 409
+    body = response.json()
+    assert body["error_code"] == "ride_not_started"
+    assert body["message"] == "Start the ride before completing it."
 
 
 async def test_driver_completes_ongoing_ride(client: AsyncClient, db_session) -> None:
-    """Regression guard: CompleteRideUseCase must permanently accept both ACCEPTED and
-    ONGOING as valid starting statuses - start is advisory, never a required gate on
-    completion. This must keep passing even if the guard is touched again later."""
+    """Happy path: ONGOING is the only status CompleteRideUseCase accepts now -
+    calling /start first is required, not advisory (reversed from an earlier
+    "ACCEPTED or ONGOING both fine" design this session)."""
     rider = await create_user(db_session)
     driver = await create_user(db_session, as_driver=True)
     ride = await create_ride(db_session, rider_id=rider.user.id)
@@ -470,6 +487,8 @@ async def test_fare_is_frozen_across_the_ride_lifecycle(client: AsyncClient, db_
     )
     assert accept_response.json()["fare"] == pytest.approx(requested_fare)
     assert accept_response.json()["tier"] == "comfort"
+
+    await _start(db_session, ride.id, driver.user.id)  # required before /complete now
 
     complete_response = await client.post(
         f"/api/v1/rides/{ride.id}/complete", headers=auth_headers(driver.access_token)

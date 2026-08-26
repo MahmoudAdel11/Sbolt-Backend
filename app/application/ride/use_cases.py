@@ -5,7 +5,13 @@ from uuid import UUID
 from app.application.driver_profile.repository import DriverProfileRepository
 from app.application.rating.repository import RatingRepository
 from app.application.ride.repository import RideRepository
-from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, RideCancelledError
+from app.core.exceptions import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    RideCancelledError,
+    RideNotStartedError,
+)
 from app.domain.rating.entities import Rating
 from app.domain.ride.entities import Ride, RideStatus, RideTier
 from app.domain.ride.geo import DEFAULT_AVAILABLE_RIDES_RADIUS_KM, bounding_box
@@ -121,14 +127,18 @@ class CompleteRideUseCase:
         if ride.driver_id != driver_id:
             raise ForbiddenError("You are not the driver for this ride.")
 
-        # Deliberately accepts BOTH ACCEPTED and ONGOING, permanently - calling
-        # StartRideUseCase first is advisory, never required. A driver who forgets
-        # (or never bothers) to call start must still be able to complete a real
-        # ride; gating completion on start would trade a cosmetic status value for
-        # a real way to get a driver stuck.
+        # ONGOING is now REQUIRED before completion - a deliberate product
+        # decision, reversing the earlier "start is advisory, ACCEPTED or
+        # ONGOING both complete fine" design. A driver who accepts but never
+        # calls /start can no longer complete the ride directly; they must
+        # start it first. ACCEPTED gets its own distinguishable error
+        # (RideNotStartedError) rather than the generic conflict, since it's a
+        # recoverable "do X first" situation, not a race condition.
         if ride.status == RideStatus.CANCELLED:
             raise RideCancelledError()
-        if ride.status not in (RideStatus.ACCEPTED, RideStatus.ONGOING):
+        if ride.status == RideStatus.ACCEPTED:
+            raise RideNotStartedError()
+        if ride.status != RideStatus.ONGOING:
             raise ConflictError("This ride cannot be completed from its current status.")
 
         ride.status = RideStatus.COMPLETED

@@ -52,3 +52,13 @@ class RideCancelledError(ConflictError):
 
     error_code = "ride_cancelled"
     message = "This ride was cancelled by the rider."
+
+
+class RideNotStartedError(ConflictError):
+    """A 409 specifically because the ride is still ACCEPTED and hasn't been
+    started yet - distinguishable from the generic conflict so the client can
+    show an accurate, recoverable message ("call /start first") instead of a
+    misleading "no longer available" one."""
+
+    error_code = "ride_not_started"
+    message = "Start the ride before completing it."
