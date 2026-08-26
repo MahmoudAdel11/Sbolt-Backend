@@ -8,6 +8,7 @@ from app.core.exceptions import ConflictError, NotFoundError, UnauthorizedError
 from app.core.jwt import create_access_token
 from app.core.security import hash_password, verify_password
 from app.domain.driver_profile.entities import DriverProfile
+from app.domain.ride.entities import RideTier
 from app.domain.user.entities import User
 
 
@@ -41,6 +42,7 @@ class RegisterUserUseCase:
         full_name: str,
         phone_number: str | None = None,
         register_as_driver: bool = False,
+        scooter_type: RideTier | None = None,
     ) -> RegisterResult:
         if await self._user_repository.exists_by_email(email):
             raise ConflictError("A user with this email already exists.")
@@ -59,7 +61,9 @@ class RegisterUserUseCase:
             # get_db_session) and neither commits directly - a failure here rolls
             # back the user creation above too, so this can't leave an orphaned
             # user with no driver profile.
-            await self._driver_profile_repository.create(DriverProfile(user_id=user.id))
+            await self._driver_profile_repository.create(
+                DriverProfile(user_id=user.id, scooter_type=scooter_type)
+            )
 
         # Registration now logs the user straight in (see RefreshTokenResponse in
         # the API layer) rather than requiring a separate /auth/login call.
@@ -136,6 +140,7 @@ class UpdateDriverVehicleUseCase:
         vehicle_type: str | None = None,
         vehicle_color: str | None = None,
         license_plate: str | None = None,
+        scooter_type: RideTier | None = None,
     ) -> DriverProfile:
         driver_profile = await self._driver_profile_repository.get_by_user_id(user_id)
         if driver_profile is None:
@@ -147,5 +152,7 @@ class UpdateDriverVehicleUseCase:
             driver_profile.vehicle_color = vehicle_color
         if license_plate is not None:
             driver_profile.license_plate = license_plate
+        if scooter_type is not None:
+            driver_profile.scooter_type = scooter_type
 
         return await self._driver_profile_repository.update(driver_profile)

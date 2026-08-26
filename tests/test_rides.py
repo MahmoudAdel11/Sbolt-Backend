@@ -1007,6 +1007,136 @@ async def test_available_rides_excludes_already_assigned_rides(
     assert response.json() == []
 
 
+async def test_black_scooter_driver_sees_all_tiers(client: AsyncClient, db_session) -> None:
+    rider = await create_user(db_session)
+    driver = await create_user(
+        db_session, as_driver=True, email="black-scooter@example.com",
+        scooter_type=RideTier.PREMIUM,
+    )
+    await _go_online(db_session, driver.user.id)
+    economy_ride = await create_ride(
+        db_session, rider_id=rider.user.id, pickup_latitude=30.05, pickup_longitude=31.23,
+        tier=RideTier.ECONOMY,
+    )
+    comfort_rider = await create_user(db_session, email="comfort-rider@example.com")
+    comfort_ride = await create_ride(
+        db_session, rider_id=comfort_rider.user.id,
+        pickup_latitude=30.05, pickup_longitude=31.23, tier=RideTier.COMFORT,
+    )
+    premium_rider = await create_user(db_session, email="premium-rider@example.com")
+    premium_ride = await create_ride(
+        db_session, rider_id=premium_rider.user.id,
+        pickup_latitude=30.05, pickup_longitude=31.23, tier=RideTier.PREMIUM,
+    )
+
+    response = await client.get(
+        "/api/v1/rides/available?lat=30.05&lng=31.23",
+        headers=auth_headers(driver.access_token),
+    )
+
+    assert response.status_code == 200
+    returned_ids = {r["id"] for r in response.json()}
+    assert returned_ids == {str(economy_ride.id), str(comfort_ride.id), str(premium_ride.id)}
+
+
+async def test_comfort_scooter_driver_sees_comfort_and_economy_not_premium(
+    client: AsyncClient, db_session
+) -> None:
+    driver = await create_user(
+        db_session, as_driver=True, email="comfort-scooter@example.com",
+        scooter_type=RideTier.COMFORT,
+    )
+    await _go_online(db_session, driver.user.id)
+
+    economy_rider = await create_user(db_session, email="economy-rider-2@example.com")
+    economy_ride = await create_ride(
+        db_session, rider_id=economy_rider.user.id,
+        pickup_latitude=30.05, pickup_longitude=31.23, tier=RideTier.ECONOMY,
+    )
+    comfort_rider = await create_user(db_session, email="comfort-rider-2@example.com")
+    comfort_ride = await create_ride(
+        db_session, rider_id=comfort_rider.user.id,
+        pickup_latitude=30.05, pickup_longitude=31.23, tier=RideTier.COMFORT,
+    )
+    premium_rider = await create_user(db_session, email="premium-rider-2@example.com")
+    await create_ride(
+        db_session, rider_id=premium_rider.user.id,
+        pickup_latitude=30.05, pickup_longitude=31.23, tier=RideTier.PREMIUM,
+    )
+
+    response = await client.get(
+        "/api/v1/rides/available?lat=30.05&lng=31.23",
+        headers=auth_headers(driver.access_token),
+    )
+
+    assert response.status_code == 200
+    returned_ids = {r["id"] for r in response.json()}
+    assert returned_ids == {str(economy_ride.id), str(comfort_ride.id)}
+
+
+async def test_economy_scooter_driver_sees_only_economy(client: AsyncClient, db_session) -> None:
+    driver = await create_user(
+        db_session, as_driver=True, email="economy-scooter@example.com",
+        scooter_type=RideTier.ECONOMY,
+    )
+    await _go_online(db_session, driver.user.id)
+
+    economy_rider = await create_user(db_session, email="economy-rider-3@example.com")
+    economy_ride = await create_ride(
+        db_session, rider_id=economy_rider.user.id,
+        pickup_latitude=30.05, pickup_longitude=31.23, tier=RideTier.ECONOMY,
+    )
+    comfort_rider = await create_user(db_session, email="comfort-rider-3@example.com")
+    await create_ride(
+        db_session, rider_id=comfort_rider.user.id,
+        pickup_latitude=30.05, pickup_longitude=31.23, tier=RideTier.COMFORT,
+    )
+    premium_rider = await create_user(db_session, email="premium-rider-3@example.com")
+    await create_ride(
+        db_session, rider_id=premium_rider.user.id,
+        pickup_latitude=30.05, pickup_longitude=31.23, tier=RideTier.PREMIUM,
+    )
+
+    response = await client.get(
+        "/api/v1/rides/available?lat=30.05&lng=31.23",
+        headers=auth_headers(driver.access_token),
+    )
+
+    assert response.status_code == 200
+    returned_ids = {r["id"] for r in response.json()}
+    assert returned_ids == {str(economy_ride.id)}
+
+
+async def test_driver_with_null_scooter_type_sees_all_tiers(
+    client: AsyncClient, db_session
+) -> None:
+    """Explicit regression test for the backward-compatible case: a pre-existing
+    driver who never set a scooter_type must not be suddenly locked out of tiers
+    they used to see."""
+    driver = await create_user(db_session, as_driver=True, email="null-scooter@example.com")
+    await _go_online(db_session, driver.user.id)
+
+    economy_rider = await create_user(db_session, email="economy-rider-4@example.com")
+    economy_ride = await create_ride(
+        db_session, rider_id=economy_rider.user.id,
+        pickup_latitude=30.05, pickup_longitude=31.23, tier=RideTier.ECONOMY,
+    )
+    premium_rider = await create_user(db_session, email="premium-rider-4@example.com")
+    premium_ride = await create_ride(
+        db_session, rider_id=premium_rider.user.id,
+        pickup_latitude=30.05, pickup_longitude=31.23, tier=RideTier.PREMIUM,
+    )
+
+    response = await client.get(
+        "/api/v1/rides/available?lat=30.05&lng=31.23",
+        headers=auth_headers(driver.access_token),
+    )
+
+    assert response.status_code == 200
+    returned_ids = {r["id"] for r in response.json()}
+    assert returned_ids == {str(economy_ride.id), str(premium_ride.id)}
+
+
 async def test_rider_cannot_access_available_rides(client: AsyncClient, registered_user) -> None:
     response = await client.get(
         "/api/v1/rides/available?lat=30.05&lng=31.23",

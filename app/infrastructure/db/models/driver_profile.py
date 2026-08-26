@@ -1,10 +1,11 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.domain.ride.entities import RideTier
 from app.infrastructure.db.base import Base
 
 
@@ -26,6 +27,20 @@ class DriverProfileModel(Base):
     vehicle_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     vehicle_color: Mapped[str | None] = mapped_column(String(30), nullable=True)
     license_plate: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Reuses the existing "ride_tier" Postgres enum type (created by the rides
+    # table's own tier column) - not a new/duplicate type. Nullable, no default:
+    # every pre-existing driver predates this column, and NULL means "no
+    # restriction" (sees all tiers), not "sees nothing" - see
+    # GetAvailableRidesUseCase.
+    scooter_type: Mapped[RideTier | None] = mapped_column(
+        Enum(
+            RideTier,
+            name="ride_tier",
+            native_enum=True,
+            values_callable=lambda e: [m.value for m in e],
+        ),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

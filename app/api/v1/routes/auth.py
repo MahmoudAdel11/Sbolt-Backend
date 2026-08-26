@@ -40,6 +40,7 @@ async def _to_response(
             vehicle_type=driver_profile.vehicle_type,
             vehicle_color=driver_profile.vehicle_color,
             license_plate=driver_profile.license_plate,
+            scooter_type=driver_profile.scooter_type,
             average_rating=average_rating,
             rating_count=rating_count,
         )
@@ -69,6 +70,7 @@ async def register(
         full_name=body.full_name,
         phone_number=body.phone_number,
         register_as_driver=body.register_as_driver,
+        scooter_type=body.scooter_type,
     )
     driver_profile = await driver_profile_repository.get_by_user_id(result.user.id)
     user_response = await _to_response(result.user, driver_profile, rating_repository)
