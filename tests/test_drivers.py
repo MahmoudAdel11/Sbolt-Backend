@@ -165,6 +165,81 @@ async def test_rider_cannot_update_vehicle_details(
     assert response.status_code == 403
 
 
+# --- scooter_type -----------------------------------------------------------------
+
+
+async def test_driver_with_no_scooter_type_returns_null(client: AsyncClient, db_session) -> None:
+    driver = await create_user(db_session, as_driver=True)
+
+    response = await client.get("/api/v1/auth/me", headers=auth_headers(driver.access_token))
+
+    assert response.json()["driver_profile"]["scooter_type"] is None
+
+
+async def test_driver_can_set_scooter_type_via_vehicle_endpoint(
+    client: AsyncClient, db_session
+) -> None:
+    driver = await create_user(db_session, as_driver=True)
+
+    response = await client.patch(
+        "/api/v1/drivers/me/vehicle",
+        headers=auth_headers(driver.access_token),
+        json={"scooter_type": "premium"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["driver_profile"]["scooter_type"] == "premium"
+
+
+async def test_scooter_type_update_is_partial_and_does_not_touch_vehicle_fields(
+    client: AsyncClient, db_session
+) -> None:
+    driver = await create_user(db_session, as_driver=True)
+    await client.patch(
+        "/api/v1/drivers/me/vehicle",
+        headers=auth_headers(driver.access_token),
+        json={"vehicle_type": "Sedan"},
+    )
+
+    response = await client.patch(
+        "/api/v1/drivers/me/vehicle",
+        headers=auth_headers(driver.access_token),
+        json={"scooter_type": "comfort"},
+    )
+
+    assert response.status_code == 200
+    profile = response.json()["driver_profile"]
+    assert profile["scooter_type"] == "comfort"
+    assert profile["vehicle_type"] == "Sedan"  # untouched by this partial update
+
+
+async def test_scooter_type_persists_across_requests(client: AsyncClient, db_session) -> None:
+    driver = await create_user(db_session, as_driver=True)
+    await client.patch(
+        "/api/v1/drivers/me/vehicle",
+        headers=auth_headers(driver.access_token),
+        json={"scooter_type": "economy"},
+    )
+
+    response = await client.get("/api/v1/auth/me", headers=auth_headers(driver.access_token))
+
+    assert response.json()["driver_profile"]["scooter_type"] == "economy"
+
+
+async def test_updating_vehicle_with_invalid_scooter_type_returns_422(
+    client: AsyncClient, db_session
+) -> None:
+    driver = await create_user(db_session, as_driver=True)
+
+    response = await client.patch(
+        "/api/v1/drivers/me/vehicle",
+        headers=auth_headers(driver.access_token),
+        json={"scooter_type": "not-a-real-tier"},
+    )
+
+    assert response.status_code == 422
+
+
 # --- Both roles simultaneously ---------------------------------------------------
 
 

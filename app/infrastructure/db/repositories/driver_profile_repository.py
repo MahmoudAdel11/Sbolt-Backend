@@ -17,6 +17,7 @@ def _to_entity(model: DriverProfileModel) -> DriverProfile:
         vehicle_type=model.vehicle_type,
         vehicle_color=model.vehicle_color,
         license_plate=model.license_plate,
+        scooter_type=model.scooter_type,
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -37,6 +38,7 @@ class SqlAlchemyDriverProfileRepository(DriverProfileRepository):
         model = DriverProfileModel(
             user_id=driver_profile.user_id,
             is_online=driver_profile.is_online,
+            scooter_type=driver_profile.scooter_type,
         )
         self._session.add(model)
         await self._session.flush()
@@ -52,6 +54,7 @@ class SqlAlchemyDriverProfileRepository(DriverProfileRepository):
         model.vehicle_type = driver_profile.vehicle_type
         model.vehicle_color = driver_profile.vehicle_color
         model.license_plate = driver_profile.license_plate
+        model.scooter_type = driver_profile.scooter_type
 
         await self._session.flush()
         await self._session.refresh(model)

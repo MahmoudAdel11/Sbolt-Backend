@@ -40,10 +40,14 @@ async def create_user(
     full_name: str = "Test User",
     phone_number: str | None = None,
     as_driver: bool = False,
+    scooter_type: RideTier | None = None,
 ) -> CreatedUser:
     """Create a persisted user with a real hashed password and a real JWT, via the app's own
     RegisterUserUseCase/LoginUserUseCase. `as_driver=True` also creates a driver_profiles row
     (a user can be a rider and a driver simultaneously - this doesn't make them exclusively one).
+    `scooter_type` defaults to None (mirrors a pre-existing driver with no scooter_type set) -
+    the API layer's model_validator, not this use-case call, is what makes it required for real
+    registration requests; this factory bypasses HTTP so it isn't enforced here.
     """
     email = email or f"{uuid4()}@example.com"
     user_repository = SqlAlchemyUserRepository(session)
@@ -59,6 +63,7 @@ async def create_user(
         full_name=full_name,
         phone_number=phone_number,
         register_as_driver=as_driver,
+        scooter_type=scooter_type,
     )
 
     login_use_case = LoginUserUseCase(user_repository, refresh_token_repository)
