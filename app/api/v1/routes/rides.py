@@ -10,6 +10,7 @@ from app.api.dependencies import (
     CurrentUserDep,
     DriverProfileRepositoryDep,
     DriverUserDep,
+    GetActiveRideUseCaseDep,
     GetAvailableRidesUseCaseDep,
     GetRideDetailUseCaseDep,
     GetRideHistoryUseCaseDep,
@@ -152,6 +153,20 @@ async def get_available_rides(
         await _to_response(ride, user_repository, driver_profile_repository, rating_repository)
         for ride in rides
     ]
+
+
+@router.get("/active", response_model=RideResponse | None)
+async def get_active_ride(
+    current_user: CurrentUserDep,
+    use_case: GetActiveRideUseCaseDep,
+    user_repository: UserRepositoryDep,
+    driver_profile_repository: DriverProfileRepositoryDep,
+    rating_repository: RatingRepositoryDep,
+) -> RideResponse | None:
+    ride = await use_case.execute(rider_id=current_user.id)
+    if ride is None:
+        return None
+    return await _to_response(ride, user_repository, driver_profile_repository, rating_repository)
 
 
 @router.get("/{ride_id}", response_model=RideResponse)

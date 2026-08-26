@@ -248,6 +248,22 @@ class GetAvailableRidesUseCase:
         )
 
 
+class GetActiveRideUseCase:
+    """Recovery path for a rider who lost track of a pending/accepted/ongoing
+    ride client-side (e.g. app force-quit before the ride was accepted) - lets
+    them ask "do I currently have an active ride?" as a first-class query,
+    rather than the only prior way to find out (a 409 on a fresh
+    POST /rides). Read-only: uses the non-locking get_active_ride_for_rider,
+    not the _for_update variant RequestRideUseCase uses for its pre-mutation
+    conflict check - a plain lookup has no transaction to protect."""
+
+    def __init__(self, ride_repository: RideRepository):
+        self._ride_repository = ride_repository
+
+    async def execute(self, rider_id: UUID) -> Ride | None:
+        return await self._ride_repository.get_active_ride_for_rider(rider_id)
+
+
 class GetRideDetailUseCase:
     def __init__(self, ride_repository: RideRepository):
         self._ride_repository = ride_repository
