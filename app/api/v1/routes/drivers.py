@@ -30,6 +30,7 @@ async def _to_response(
             vehicle_type=driver_profile.vehicle_type,
             vehicle_color=driver_profile.vehicle_color,
             license_plate=driver_profile.license_plate,
+            scooter_type=driver_profile.scooter_type,
             average_rating=average_rating,
             rating_count=rating_count,
         ),
@@ -60,5 +61,6 @@ async def update_driver_vehicle(
         vehicle_type=request.vehicle_type,
         vehicle_color=request.vehicle_color,
         license_plate=request.license_plate,
+        scooter_type=request.scooter_type,
     )
     return await _to_response(current_user, driver_profile, rating_repository)

@@ -18,6 +18,25 @@ class RideTier(StrEnum):
     PREMIUM = "premium"
 
 
+# Explicit hierarchy for driver/scooter-type capability filtering
+# (Street=ECONOMY < Ride=COMFORT < Black=PREMIUM, per the scooter-types product
+# decision) - StrEnum members compare by string value/identity only, declaration
+# order isn't exposed as comparable, so this must be spelled out by hand.
+_TIER_RANK: dict[RideTier, int] = {
+    RideTier.ECONOMY: 1,
+    RideTier.COMFORT: 2,
+    RideTier.PREMIUM: 3,
+}
+
+
+def tiers_at_or_below(tier: RideTier) -> list[RideTier]:
+    """Every tier a driver whose scooter_type is `tier` can accept - their own
+    tier plus every tier ranked below it (a Black driver can also take
+    Ride/Street rides; a Street driver can only take Street)."""
+    rank = _TIER_RANK[tier]
+    return [t for t, r in _TIER_RANK.items() if r <= rank]
+
+
 @dataclass
 class Ride:
     rider_id: UUID

@@ -13,7 +13,7 @@ from app.core.exceptions import (
     RideNotStartedError,
 )
 from app.domain.rating.entities import Rating
-from app.domain.ride.entities import Ride, RideStatus, RideTier
+from app.domain.ride.entities import Ride, RideStatus, RideTier, tiers_at_or_below
 from app.domain.ride.geo import DEFAULT_AVAILABLE_RIDES_RADIUS_KM, bounding_box
 from app.domain.ride.pricing import compute_fare
 
@@ -230,12 +230,21 @@ class GetAvailableRidesUseCase:
         lat_min, lat_max, lng_min, lng_max = bounding_box(
             latitude, longitude, DEFAULT_AVAILABLE_RIDES_RADIUS_KM
         )
+        # NULL scooter_type (all pre-existing drivers) means "no restriction" -
+        # None here skips the tier filter entirely in the repository rather than
+        # restricting to an empty allow-list.
+        allowed_tiers = (
+            tiers_at_or_below(driver_profile.scooter_type)
+            if driver_profile.scooter_type is not None
+            else None
+        )
         return await self._ride_repository.list_available(
             pickup_lat_min=lat_min,
             pickup_lat_max=lat_max,
             pickup_lng_min=lng_min,
             pickup_lng_max=lng_max,
             limit=_AVAILABLE_RIDES_LIMIT,
+            allowed_tiers=allowed_tiers,
         )
 
 

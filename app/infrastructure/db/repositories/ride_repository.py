@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ride.repository import RideRepository
 from app.core.exceptions import ConflictError, NotFoundError
-from app.domain.ride.entities import Ride, RideStatus
+from app.domain.ride.entities import Ride, RideStatus, RideTier
 from app.infrastructure.db.models.ride import RideModel
 
 _TERMINAL_STATUSES = (RideStatus.COMPLETED, RideStatus.CANCELLED)
@@ -131,15 +131,22 @@ class SqlAlchemyRideRepository(RideRepository):
         pickup_lng_min: float,
         pickup_lng_max: float,
         limit: int,
+        allowed_tiers: list[RideTier] | None = None,
     ) -> list[Ride]:
+        conditions = [
+            RideModel.status == RideStatus.REQUESTED,
+            RideModel.driver_id.is_(None),
+            RideModel.pickup_latitude.between(pickup_lat_min, pickup_lat_max),
+            RideModel.pickup_longitude.between(pickup_lng_min, pickup_lng_max),
+        ]
+        # None means "no restriction" (driver has no scooter_type set) - skip the
+        # tier condition entirely rather than filtering to an empty allow-list.
+        if allowed_tiers is not None:
+            conditions.append(RideModel.tier.in_(allowed_tiers))
+
         result = await self._session.execute(
             select(RideModel)
-            .where(
-                RideModel.status == RideStatus.REQUESTED,
-                RideModel.driver_id.is_(None),
-                RideModel.pickup_latitude.between(pickup_lat_min, pickup_lat_max),
-                RideModel.pickup_longitude.between(pickup_lng_min, pickup_lng_max),
-            )
+            .where(*conditions)
             .order_by(desc(RideModel.requested_at))
             .limit(limit)
         )

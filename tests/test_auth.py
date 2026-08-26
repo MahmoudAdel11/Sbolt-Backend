@@ -113,6 +113,7 @@ async def test_register_as_driver_creates_driver_profile(client: AsyncClient) ->
             "password": "supersecret123",
             "full_name": "New Driver",
             "register_as_driver": True,
+            "scooter_type": "comfort",
         },
     )
 
@@ -120,6 +121,53 @@ async def test_register_as_driver_creates_driver_profile(client: AsyncClient) ->
     body = response.json()
     assert body["user"]["driver_profile"] is not None
     assert body["user"]["driver_profile"]["is_online"] is False  # drivers start offline
+    assert body["user"]["driver_profile"]["scooter_type"] == "comfort"
+
+
+async def test_register_as_driver_without_scooter_type_returns_422(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "driver-no-scooter@example.com",
+            "password": "supersecret123",
+            "full_name": "No Scooter",
+            "register_as_driver": True,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+async def test_register_as_rider_without_scooter_type_succeeds(client: AsyncClient) -> None:
+    """scooter_type is only required when register_as_driver is true - a rider
+    registration must not be blocked by its absence."""
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "rider-no-scooter@example.com",
+            "password": "supersecret123",
+            "full_name": "Rider No Scooter",
+        },
+    )
+
+    assert response.status_code == 201
+
+
+async def test_register_as_driver_with_invalid_scooter_type_returns_422(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "bad-scooter@example.com",
+            "password": "supersecret123",
+            "full_name": "Bad Scooter",
+            "register_as_driver": True,
+            "scooter_type": "not-a-real-tier",
+        },
+    )
+
+    assert response.status_code == 422
 
 
 async def test_register_access_token_works_immediately(client: AsyncClient) -> None:
