@@ -34,6 +34,8 @@ class RequestRideUseCase:
         dropoff_latitude: float,
         dropoff_longitude: float,
         tier: RideTier,
+        pickup_address: str | None = None,
+        dropoff_address: str | None = None,
     ) -> Ride:
         active_ride = await self._ride_repository.get_active_ride_for_rider_for_update(rider_id)
         if active_ride is not None:
@@ -48,6 +50,8 @@ class RequestRideUseCase:
             pickup_longitude=pickup_longitude,
             dropoff_latitude=dropoff_latitude,
             dropoff_longitude=dropoff_longitude,
+            pickup_address=pickup_address,
+            dropoff_address=dropoff_address,
             tier=tier,
             fare=fare,
         )

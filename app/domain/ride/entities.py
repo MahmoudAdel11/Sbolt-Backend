@@ -52,6 +52,12 @@ class Ride:
     fare: float
     status: RideStatus = RideStatus.REQUESTED
     driver_id: UUID | None = None
+    # Resolved client-side (CLGeocoder) at request time, sent alongside the
+    # coordinates - see the coordinate fields above. None when geocoding
+    # failed or wasn't available client-side; display falls back to
+    # coordinates in that case (a client-side concern, not this entity's).
+    pickup_address: str | None = None
+    dropoff_address: str | None = None
     # Server-generated on persistence; unset (None) before the repository assigns them.
     id: UUID | None = None
     requested_at: datetime | None = None
