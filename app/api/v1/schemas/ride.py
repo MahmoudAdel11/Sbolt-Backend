@@ -11,6 +11,8 @@ class RideRequestSchema(BaseModel):
     pickup_longitude: float = Field(ge=-180, le=180)
     dropoff_latitude: float = Field(ge=-90, le=90)
     dropoff_longitude: float = Field(ge=-180, le=180)
+    pickup_address: str | None = None
+    dropoff_address: str | None = None
     tier: RideTier
 
 
@@ -42,6 +44,8 @@ class RideResponse(BaseModel):
     pickup_longitude: float
     dropoff_latitude: float
     dropoff_longitude: float
+    pickup_address: str | None
+    dropoff_address: str | None
     requested_at: datetime
     accepted_at: datetime | None
     completed_at: datetime | None

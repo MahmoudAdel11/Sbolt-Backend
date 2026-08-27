@@ -102,6 +102,37 @@ async def test_request_ride_success(client: AsyncClient, registered_user) -> Non
     assert body["driver_id"] is None
     assert body["tier"] == "economy"
     assert body["fare"] > 0
+    # No addresses in VALID_RIDE_PAYLOAD - confirms the ride is still
+    # creatable with none supplied, falling back to null in the response.
+    assert body["pickup_address"] is None
+    assert body["dropoff_address"] is None
+
+
+async def test_request_ride_with_addresses_stores_and_returns_them(
+    client: AsyncClient, registered_user
+) -> None:
+    response = await client.post(
+        "/api/v1/rides",
+        headers=auth_headers(registered_user.access_token),
+        json={
+            **VALID_RIDE_PAYLOAD,
+            "pickup_address": "New Cairo",
+            "dropoff_address": "Downtown Cairo",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["pickup_address"] == "New Cairo"
+    assert body["dropoff_address"] == "Downtown Cairo"
+
+    detail = await client.get(
+        f"/api/v1/rides/{body['id']}",
+        headers=auth_headers(registered_user.access_token),
+    )
+    assert detail.status_code == 200
+    assert detail.json()["pickup_address"] == "New Cairo"
+    assert detail.json()["dropoff_address"] == "Downtown Cairo"
 
 
 async def test_request_second_ride_while_active_returns_conflict(

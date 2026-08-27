@@ -22,6 +22,8 @@ def _to_entity(model: RideModel) -> Ride:
         pickup_longitude=float(model.pickup_longitude),
         dropoff_latitude=float(model.dropoff_latitude),
         dropoff_longitude=float(model.dropoff_longitude),
+        pickup_address=model.pickup_address,
+        dropoff_address=model.dropoff_address,
         tier=model.tier,
         fare=float(model.fare),
         requested_at=model.requested_at,
@@ -55,6 +57,8 @@ class SqlAlchemyRideRepository(RideRepository):
             pickup_longitude=ride.pickup_longitude,
             dropoff_latitude=ride.dropoff_latitude,
             dropoff_longitude=ride.dropoff_longitude,
+            pickup_address=ride.pickup_address,
+            dropoff_address=ride.dropoff_address,
             tier=ride.tier,
             fare=ride.fare,
         )
