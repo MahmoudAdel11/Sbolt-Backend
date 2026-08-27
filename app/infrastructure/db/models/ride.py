@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Numeric, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Numeric, String, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,6 +46,12 @@ class RideModel(Base):
     pickup_longitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
     dropoff_latitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
     dropoff_longitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
+    # Resolved client-side (CLGeocoder) and sent alongside coordinates at
+    # request time - never recalculated server-side. Nullable: a rider who
+    # requested offline or whose geocoding failed still gets a ride, with no
+    # address to show.
+    pickup_address: Mapped[str | None] = mapped_column(String, nullable=True)
+    dropoff_address: Mapped[str | None] = mapped_column(String, nullable=True)
     tier: Mapped[RideTier] = mapped_column(
         Enum(
             RideTier,
